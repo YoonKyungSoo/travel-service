@@ -4,7 +4,8 @@ import { createStore } from './store.js';
 import { TRIP_DEFAULT, SEED } from './data.js';
 import { esc, newId, fmtDate, toast, dday } from './util.js';
 import { openModal, closeModal } from './ui.js';
-import { initMap, showMap } from './map.js';
+import { initMap, showMap, detectDistrict } from './map.js';
+import { PACK_VERSION, PACK_PLACES, PACK_STAYS, PACK_SCHEDULE, PACK_CHECKLIST, PACK_CHECK_NOTES } from './pack.js';
 import { renderSchedule } from './schedule.js';
 import { renderStay } from './stay.js';
 import { renderChecklist } from './checklist.js';
@@ -94,29 +95,56 @@ async function openTrip(key) {
     paintHeader();
     notify('trip');
   }));
-  for (const c of COLLECTIONS) {
+  const firstLoads = COLLECTIONS.map((c) => new Promise((resolve) => {
     unsubs.push(S.store.watch(key, c, (items) => {
       S.data[c] = items;
       notify(c);
+      resolve();
     }));
-  }
+  }));
   S.me = local.get(`ts:me:${key}`);
   paintHeader();
   if (!S.me || !trip.members?.includes(S.me)) askWho();
   notify('all');
+  // 추천 데이터(가이드 정리본)를 아직 안 넣은 여행이면 한 번 넣기
+  if ((trip.pack || 0) < PACK_VERSION) {
+    Promise.race([Promise.all(firstLoads), new Promise((r) => setTimeout(r, 8000))])
+      .then(() => applyPack(key))
+      .catch((e) => console.error('추천 데이터 넣기 실패', e));
+  }
+}
+
+async function applyPack(key) {
+  if (S.key !== key) return;
+  const has = (col, id) => S.data[col].some((x) => x.id === id);
+  const places = PACK_PLACES.filter((p) => !has('places', p.id))
+    .map((p) => ({ ...p, district: typeof p.lat === 'number' ? detectDistrict(p.lat, p.lng) : undefined }));
+  const texts = S.data.checklist.map((c) => c.text || '');
+  const checklist = PACK_CHECKLIST.filter((c) => !has('checklist', c.id) && !texts.some((t) => t.includes(c.match)))
+    .map(({ match, ...c }, i) => ({ ...c, assignee: '공용', checked: false, order: 100 + i })); // eslint-disable-line no-unused-vars
+  const schedule = PACK_SCHEDULE.filter((s) => !has('schedule', s.id));
+  const stays = PACK_STAYS.filter((s) => !has('stays', s.id)).map((s) => ({ ...s, district: detectDistrict(s.lat, s.lng) }));
+  await S.store.putMany(key, { places, checklist, schedule, stays });
+  // 이미 있는 앱 설치 항목에 사용 팁 붙이기
+  for (const [word, note] of PACK_CHECK_NOTES) {
+    const c = S.data.checklist.find((x) => x.group === '앱 설치' && (x.text || '').includes(word) && !x.note);
+    if (c) S.store.update(key, 'checklist', c.id, { note });
+  }
+  await S.store.updateTrip(key, { pack: PACK_VERSION });
+  if (places.length) toast(`추천 장소 ${places.length}곳과 일정을 불러왔어요.`);
 }
 
 function paintHeader() {
   $('tripName').textContent = S.trip.name;
   const mode = S.store.mode;
   // 모바일 상단 바에는 날짜 옆에 저장 방식을 짧게 표시
-  const short = mode === 'cloud' ? '' : mode === 'local' ? ' · 📱 이 기기 저장' : ' · ⚠️ 연결 실패';
-  $('tripDates').innerHTML = `${fmtDate(S.trip.startDate)} ~ ${fmtDate(S.trip.endDate)}<span class="mode-short">${short}</span>`;
+  const short = mode === 'cloud' ? '' : mode === 'local' ? ' · 이 기기 저장' : ' · 연결 실패';
+  $('tripDates').innerHTML = `${fmtDate(S.trip.startDate)} – ${fmtDate(S.trip.endDate)}<span class="mode-short">${short}</span>`;
   $('whoBtn').querySelector('span').textContent = S.me || '이름 선택';
   const dd = dday(S.trip.startDate, S.trip.endDate);
   $('dday').textContent = dd;
   $('dday').hidden = !dd;
-  $('modeBadge').textContent = mode === 'cloud' ? '☁️ 실시간 공유 중' : mode === 'local' ? '📱 이 기기에만 저장 중' : '⚠️ 서버 연결 실패 · 이 기기에만 저장';
+  $('modeBadge').textContent = mode === 'cloud' ? '● 실시간 공유 중' : mode === 'local' ? '이 기기에만 저장 중' : '서버 연결 실패 · 이 기기에만 저장';
   $('modeBadge').className = mode === 'cloud' ? 'ok' : 'warn';
 }
 
@@ -148,14 +176,13 @@ function showLanding(msg) {
   landingEl.innerHTML = `
     <div class="landing">
       <div class="hero">
-        <span class="hero-tag">✈️ ICN → PVG</span>
+        <span class="hero-tag">ICN → PVG · DEC 10–13</span>
         <h1><span class="zh-big">上海</span>상하이 가보자고</h1>
-        <p>지도 · 일정 · 숙소 · 준비물 · 지출<br />우리 둘이 한 링크로 같이 쓰기</p>
-        <div class="stickers"><span>🥟</span><span>🌃</span><span>🧋</span><span>🛍️</span></div>
+        <p>지도 · 일정 · 숙소 · 준비물 · 지출 — 둘이 한 링크로.</p>
       </div>
       ${msg ? `<p class="notice warn">${esc(msg)}</p>` : ''}
       <form id="newTrip" class="form card">
-        <h2>새 여행 만들기 ✨</h2>
+        <h2>새 여행 만들기</h2>
         <label class="field"><span class="field-label">여행 이름</span><input name="name" value="${esc(TRIP_DEFAULT.name)}" /></label>
         <div class="grid2">
           <label class="field"><span class="field-label">출발</span><input type="date" name="startDate" value="${TRIP_DEFAULT.startDate}" /></label>
@@ -213,8 +240,8 @@ function shareLink() {
     <p>이 링크를 동행에게 보내세요. <b>링크를 아는 사람은 누구나 보고 수정할 수 있으니</b> 단체방 등에는 올리지 마세요.</p>
     <div class="copy-box"><input readonly value="${esc(url)}" id="shareUrl" /></div>
     <div class="btn-row">
-      <button type="button" class="btn primary" id="copyUrl">📋 복사</button>
-      ${navigator.share ? '<button type="button" class="btn" id="nativeShare">📤 공유하기</button>' : ''}
+      <button type="button" class="btn primary" id="copyUrl">링크 복사</button>
+      ${navigator.share ? '<button type="button" class="btn" id="nativeShare">공유하기</button>' : ''}
     </div>
     <p class="hint">휴대폰에서 이 페이지를 연 뒤 <b>공유 → 홈 화면에 추가</b>하면 앱처럼 바로 열 수 있어요.</p>`, (body) => {
     body.querySelector('#copyUrl').addEventListener('click', async () => {

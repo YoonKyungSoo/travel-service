@@ -33,13 +33,16 @@ export const AIRPORTS = [
 ];
 export const PVG = AIRPORTS[0];
 
+// svg: index.html 아이콘 id, en: 작은 영문 라벨
 export const PLACE_CATS = {
-  sight: { label: '관광', icon: '📸' },
-  food: { label: '맛집', icon: '🍜' },
-  cafe: { label: '카페', icon: '☕' },
-  shop: { label: '쇼핑', icon: '🛍️' },
-  etc: { label: '기타', icon: '📌' },
+  sight: { label: '관광', icon: '📸', svg: 'c-sight', en: 'SIGHT' },
+  activity: { label: '액티비티', icon: '🎟️', svg: 'c-activity', en: 'DO' },
+  food: { label: '먹거리', icon: '🍜', svg: 'c-food', en: 'EAT' },
+  cafe: { label: '카페·디저트', icon: '☕', svg: 'c-cafe', en: 'CAFE' },
+  shop: { label: '쇼핑', icon: '🛍️', svg: 'c-shop', en: 'SHOP' },
+  etc: { label: '기타', icon: '📌', svg: 'c-etc', en: 'ETC' },
 };
+export const catSvg = (cat, cls = 'i') => `<svg class="${cls}"><use href="#${(PLACE_CATS[cat] || PLACE_CATS.etc).svg}"/></svg>`;
 
 export const STAY_STATUS = {
   candidate: { label: '후보', cls: 'tag-gray' },

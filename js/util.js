@@ -117,6 +117,26 @@ export const estimateDriveMin = (km) => Math.round(((km * 1.3) / 40) * 60 + 10);
 /** 고덕 지도(중국에서 가장 정확)로 열기 */
 export const amapUrl = (lat, lng, name) =>
   `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name || '')}&coordinate=gaode&callnative=1`;
+/** 장소 이동 시간: 1.2km 이하는 도보, 그 이상은 택시(디디) */
+export function legInfo(a, b) {
+  const km = distanceKm(a, b);
+  const walk = km <= 1.2;
+  const min = walk ? Math.max(1, Math.round(((km * 1.3) / 4.5) * 60)) : estimateDriveMin(km);
+  return { km, min, walk, label: `${km < 1 ? Math.round(km * 1000) + 'm' : km.toFixed(1) + 'km'} · ${walk ? '도보' : '택시'} ${min}분` };
+}
+const amapPt = (p) => `${p.lng},${p.lat},${encodeURIComponent(p.nameZh || p.name || '')}`;
+/** 고덕 길찾기. from이 없으면 현재 위치에서 출발. mode: car | bus(대중교통) | walk */
+export const amapNav = (to, from, mode = 'car') =>
+  `https://uri.amap.com/navigation?${from ? `from=${amapPt(from)}&` : ''}to=${amapPt(to)}&mode=${mode}&coordinate=gaode&callnative=1`;
+/** 고덕 키워드 검색 (체인점 등 위치가 정해지지 않은 곳) */
+export const amapSearch = (kw) => `https://uri.amap.com/search?keyword=${encodeURIComponent(kw)}&city=310000&callnative=1`;
+/** 구글맵 (중국 지도에서는 구글도 GCJ-02 좌표를 씀) */
+export const googleUrl = (p) =>
+  typeof p.lat === 'number' && !p.approx
+    ? `https://www.google.com/maps/search/?api=1&query=${p.lat.toFixed(6)},${p.lng.toFixed(6)}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.nameZh || p.name} 上海`)}`;
+export const googleDir = (a, b, mode = 'transit') =>
+  `https://www.google.com/maps/dir/?api=1&origin=${a.lat.toFixed(6)},${a.lng.toFixed(6)}&destination=${b.lat.toFixed(6)},${b.lng.toFixed(6)}&travelmode=${mode}`;
 
 // ── 기타 ──
 export const byTime = (a, b) =>

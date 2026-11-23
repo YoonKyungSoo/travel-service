@@ -98,6 +98,16 @@ async function createCloudStore() {
       await authReady;
       fire(F.deleteDoc(docRef(key, col, id)));
     },
+    /** 고정 ID 문서 여러 개를 한 번에 쓰기 (추천 데이터 불러오기용). {컬렉션: [{id, ...}]} */
+    async putMany(key, byCol) {
+      await authReady;
+      const all = Object.entries(byCol).flatMap(([col, items]) => items.map((it) => [col, it]));
+      for (let i = 0; i < all.length; i += 400) { // 배치 한도 500
+        const batch = F.writeBatch(db);
+        for (const [col, it] of all.slice(i, i + 400)) batch.set(docRef(key, col, it.id), clean({ ...stripId(it), createdAt: Date.now() }), { merge: true });
+        await batch.commit();
+      }
+    },
   };
 }
 
@@ -153,6 +163,13 @@ function createLocalStore() {
     },
     async remove(key, col, id) {
       write(k(key, col), read(k(key, col), []).filter((x) => x.id !== id));
+    },
+    async putMany(key, byCol) {
+      for (const [col, items] of Object.entries(byCol)) {
+        const cur = read(k(key, col), []);
+        const ids = new Set(items.map((it) => it.id));
+        write(k(key, col), [...cur.filter((x) => !ids.has(x.id)), ...items.map((it) => ({ ...it, createdAt: Date.now() }))]);
+      }
     },
   };
 }

@@ -62,26 +62,21 @@ export function renderExpense(el) {
       <button type="button" class="btn primary" id="addExp"><svg class="i"><use href="#i-plus"/></svg>지출</button>
     </header>
     <section class="summary">
-      <div class="total-card">
-        <small>총 지출</small>
-        <b>${won(totalKRW)}</b>
-        <div class="total-sub">
-          ${totalCNY ? `<span>위안 결제 ${yuan(totalCNY)}</span>` : '<span>아직 0원 😎</span>'}
-          <button type="button" class="fx" id="fxBtn">1¥ = ₩${esc(fx)} ✎</button>
-        </div>
+      <div class="total">
+        <div class="total-label"><span class="eyebrow" style="margin:0">TOTAL</span><button type="button" class="fx" id="fxBtn">1¥ = ₩${esc(fx)}</button></div>
+        <b class="total-num">${won(totalKRW)}</b>
+        <span class="total-sub">${totalCNY ? `위안 결제 ${yuan(totalCNY)}` : '아직 지출이 없어요'}</span>
       </div>
       <div class="per">
         ${members.map((m) => `<div><small>${esc(m)} 부담</small><b>${won(burden[m])}</b></div>`).join('')}
       </div>
-      ${members.length > 1 ? `<div class="settle">${moves.length
-        ? moves.map((mv) => `💸 <b>${esc(mv.from)}</b> → <b>${esc(mv.to)}</b> <b class="amt">${won(mv.amt)}</b>`).join('<br>')
-        : '✅ 정산할 금액이 없어요'}</div>` : ''}
+      ${members.length > 1 && moves.length ? `<div class="settle">${moves.map((mv) => `<b>${esc(mv.from)}</b> → <b>${esc(mv.to)}</b> <b class="amt">${won(mv.amt)}</b> 보내기`).join('<br>')}</div>` : ''}
       ${byCat.length ? `<ul class="bars">${byCat.map(([k, v]) => `
-        <li><span>${EXPENSE_CATS[k].icon} ${EXPENSE_CATS[k].label}</span><i style="width:${(v / maxCat) * 100}%"></i><b>${won(v)}</b></li>`).join('')}</ul>` : ''}
+        <li><span>${EXPENSE_CATS[k].label}</span><i style="width:${(v / maxCat) * 100}%"></i><b>${won(v)}</b></li>`).join('')}</ul>` : ''}
     </section>
     <div class="chips scroll-x">
       <button type="button" class="chip ${catFilter === 'all' ? 'on' : ''}" data-cat="all">전체</button>
-      ${Object.entries(EXPENSE_CATS).map(([k, c]) => `<button type="button" class="chip ${catFilter === k ? 'on' : ''}" data-cat="${k}">${c.icon} ${c.label}</button>`).join('')}
+      ${Object.entries(EXPENSE_CATS).map(([k, c]) => `<button type="button" class="chip ${catFilter === k ? 'on' : ''}" data-cat="${k}">${c.label}</button>`).join('')}
     </div>
     ${list.length ? Object.entries(byDate).map(([date, es]) => `
       <h3 class="sub">${fmtDate(date)} <small>${won(es.reduce((s, e) => s + toKRW(e.amount, e.currency, fx), 0))}</small></h3>
@@ -93,7 +88,7 @@ export function renderExpense(el) {
             <small>${esc(e.payer)} · ${PAY_METHODS[e.method] || ''} · ${e.shared ? '같이' : '개인'}${e.district ? ' · ' + esc(districtName(e.district)) : ''}</small>
           </span>
           <span class="row-amt"><b>${e.currency === 'CNY' ? yuan(e.amount) : won(e.amount)}</b>${e.currency === 'CNY' ? `<small>${won(e.amount * fx)}</small>` : ''}</span>
-        </button></li>`).join('')}</ul>`).join('') : empty('🧾', '지출 내역이 없어요.')}`;
+        </button></li>`).join('')}</ul>`).join('') : empty('', '지출 내역이 없어요.')}`;
 
   el.querySelector('#addExp').onclick = () => expenseForm();
   el.querySelector('#fxBtn').onclick = editFx;

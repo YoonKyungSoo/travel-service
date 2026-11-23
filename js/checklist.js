@@ -20,14 +20,10 @@ export function renderChecklist(el) {
   const filters = { all: '전체', todo: '안 챙긴 것', ...Object.fromEntries(assignees().map((a) => [a, a])) };
 
   el.innerHTML = `
-    <header class="page-head"><h1>준비물</h1></header>
-    <section class="progress-card">
-      <div class="ring" style="--p:${pct}"><b>${pct}<small>%</small></b></div>
-      <div>
-        <b class="pc-title">${pct === 100 ? '짐 싸기 끝! 🎉' : pct >= 50 ? '거의 다 왔어요 💪' : '하나씩 챙겨볼까요 🎒'}</b>
-        <p>${done}개 챙김 · ${all.length - done}개 남음</p>
-      </div>
-    </section>
+    <header class="page-head">
+      <div><h1>준비물</h1><span class="meta">${done} / ${all.length} 챙김 · ${pct}%${pct === 100 ? ' · 짐 싸기 끝' : ''}</span></div>
+    </header>
+    <div class="progress"><i style="width:${pct}%"></i></div>
     <form class="quick-add" id="quickAdd">
       <select name="group">${CHECK_GROUPS.map((g) => `<option>${esc(g)}</option>`).join('')}</select>
       <input name="text" placeholder="준비물 추가" autocomplete="off" enterkeyhint="done" />
@@ -43,13 +39,13 @@ export function renderChecklist(el) {
         <ul class="list checks">${items.map((c) => `
           <li class="${c.checked ? 'done' : ''}">
             <button type="button" class="check-row" data-toggle="${c.id}">
-              <span class="box">${c.checked ? '✓' : ''}</span>
-              <span class="row-main"><b>${esc(c.text)}</b></span>
+              <span class="box">${c.checked ? '<svg class="i"><use href="#i-ok"/></svg>' : ''}</span>
+              <span class="row-main"><b>${esc(c.text)}</b>${c.note ? `<small>${esc(c.note)}</small>` : ''}</span>
             </button>
             <button type="button" class="who" data-assign="${c.id}" title="담당자 바꾸기">${esc(c.assignee || '공용')}</button>
             <button type="button" class="icon-btn" data-edit="${c.id}" aria-label="수정">⋯</button>
           </li>`).join('')}</ul>`;
-    }).join('') : empty('🎒', filter === 'todo' ? '다 챙겼어요! 🎉' : '준비물이 없어요.')}`;
+    }).join('') : empty('', filter === 'todo' ? '다 챙겼어요.' : '준비물이 없어요.')}`;
 
   const qa = el.querySelector('#quickAdd');
   qa.group.value = el.dataset.lastGroup || CHECK_GROUPS[0];
@@ -83,6 +79,7 @@ function itemForm(c) {
     canDelete: true,
     fields: `
       ${field('내용', input('text', c.text, 'required autocomplete="off"'))}
+      ${field('메모', input('note', c.note, 'autocomplete="off"'))}
       ${field('분류', select('group', Object.fromEntries(CHECK_GROUPS.map((g) => [g, g])), c.group))}
       ${field('담당', segmented('assignee', Object.fromEntries(assignees().map((a) => [a, a])), c.assignee || '공용'))}`,
     onSubmit: async (v) => {

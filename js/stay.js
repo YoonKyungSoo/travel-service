@@ -48,16 +48,20 @@ function stayList() {
     return empty('🏨', '아직 숙소가 없어요. 후보를 여러 개 넣고 비교한 뒤 확정하세요.<br><small>12/13 08:40 출발이라 <b>푸둥 공항까지 거리</b>가 중요해요.</small>');
   }
   const confirmed = list.find((s) => s.status === 'confirmed');
-  return `${confirmed ? airportPlan(confirmed) : '<p class="notice">💡 확정하면 일정에 체크인·체크아웃이 표시되고, 공항 이동 시간이 계산돼요.</p>'}
+  return `${confirmed ? '' : '<p class="notice">후보를 비교한 뒤 확정하면 일정에 체크인·체크아웃이 들어가고, 공항 이동 시간이 계산돼요.</p>'}
     <div class="cards">${list.map(stayCard).join('')}</div>`;
 }
 
 function stayMetrics(s) {
   if (typeof s.lat !== 'number') return null;
   const km = distanceKm(s, PVG);
-  const pts = S.data.places.filter((p) => typeof p.lat === 'number');
-  const avg = pts.length ? pts.reduce((sum, p) => sum + distanceKm(s, p), 0) / pts.length : null;
-  return { km, min: estimateDriveMin(km), avg };
+  // 일정에 연결된 장소가 있으면 그 장소들 기준, 없으면 전체 장소 (디즈니 등 먼 곳 때문에 왜곡되지 않게 중앙값)
+  const linked = new Set(S.data.schedule.map((x) => x.placeId).filter(Boolean));
+  let pts = S.data.places.filter((p) => typeof p.lat === 'number' && !p.approx);
+  if (pts.some((p) => linked.has(p.id))) pts = pts.filter((p) => linked.has(p.id));
+  const ds = pts.map((p) => distanceKm(s, p)).sort((a, b) => a - b);
+  const avg = ds.length ? ds[Math.floor(ds.length / 2)] : null;
+  return { km, min: estimateDriveMin(km), avg, n: ds.length };
 }
 
 function stayCard(s) {
@@ -68,27 +72,29 @@ function stayCard(s) {
   return `<article class="card stay-card ${s.status}">
     <div class="card-top">
       <span class="tag ${st.cls}">${st.label}</span>
-      <button type="button" class="btn sm ghost" data-edit-stay="${s.id}">✏️ 수정</button>
+      <button type="button" class="icon-btn" data-edit-stay="${s.id}" aria-label="수정"><svg class="i"><use href="#i-edit"/></svg></button>
     </div>
     <h3>${esc(s.name)}</h3>
     ${s.nameZh ? `<p class="zh">${esc(s.nameZh)}</p>` : ''}
-    <p class="muted">${esc(districtName(s.district))}${s.nearestMetro ? ` · 🚇 ${esc(s.nearestMetro)}` : ''} · ${fmtDate(s.checkIn)} ~ ${fmtDate(s.checkOut)} (${nights}박)</p>
+    <p class="muted">${esc(districtName(s.district))}${s.nearestMetro ? ` · ${esc(s.nearestMetro)}` : ''} · ${fmtDate(s.checkIn)} – ${fmtDate(s.checkOut)} · ${nights}박</p>
     <dl class="metrics">
-      <div><dt>✈️ 공항까지</dt><dd>${m ? `약 ${m.min}분<small>${m.km.toFixed(1)}km</small>` : '—<small>위치 미입력</small>'}</dd></div>
-      <div><dt>📍 장소 평균</dt><dd>${m?.avg != null ? `${m.avg.toFixed(1)}km<small>장소 ${S.data.places.length}곳 기준</small>` : '—'}</dd></div>
-      <div><dt>💰 1박</dt><dd>${s.price ? `${won(nights ? krw / nights : krw)}<small>총 ${s.currency === 'CNY' ? yuan(s.price) : won(krw)}</small>` : '—'}</dd></div>
+      <div><dt>공항까지</dt><dd>${m ? `${m.min}분<small>${m.km.toFixed(1)}km</small>` : '—<small>위치 미입력</small>'}</dd></div>
+      <div><dt>장소 평균</dt><dd>${m?.avg != null ? `${m.avg.toFixed(1)}km<small>${m.n}곳 기준</small>` : '—'}</dd></div>
+      <div><dt>1박</dt><dd>${s.price ? `${won(nights ? krw / nights : krw)}<small>총 ${s.currency === 'CNY' ? yuan(s.price) : won(krw)}</small>` : '—<small>가격 미입력</small>'}</dd></div>
     </dl>
-    ${s.pros ? `<p class="pros">👍 ${esc(s.pros)}</p>` : ''}
-    ${s.cons ? `<p class="cons">👎 ${esc(s.cons)}</p>` : ''}
+    ${s.pros ? `<p class="pros">+ ${esc(s.pros)}</p>` : ''}
+    ${s.cons ? `<p class="cons">− ${esc(s.cons)}</p>` : ''}
+    ${s.memo ? `<p class="muted pre">${esc(s.memo)}</p>` : ''}
     ${s.bookingRef ? `<p class="muted">예약번호 ${esc(s.bookingRef)}</p>` : ''}
     <div class="btn-row">
-      ${s.status !== 'confirmed' ? `<button type="button" class="btn primary" data-confirm="${s.id}">✔ 확정</button>` : `<button type="button" class="btn" data-status="candidate" data-id="${s.id}">확정 취소</button>`}
+      ${s.status !== 'confirmed' ? `<button type="button" class="btn primary" data-confirm="${s.id}">확정</button>` : `<button type="button" class="btn" data-status="candidate" data-id="${s.id}">확정 취소</button>`}
       ${s.status === 'candidate' ? `<button type="button" class="btn ghost" data-status="dropped" data-id="${s.id}">탈락</button>` : ''}
       ${s.status === 'dropped' ? `<button type="button" class="btn ghost" data-status="candidate" data-id="${s.id}">후보로 복귀</button>` : ''}
-      ${typeof s.lat === 'number' ? `<button type="button" class="btn" data-onmap="${s.id}">🗺️ 지도</button>` : ''}
-      ${s.nameZh || s.addressZh ? `<button type="button" class="btn" data-driver="${s.id}">🚕 기사님께</button>` : ''}
-      ${s.bookingUrl ? `<a class="btn" href="${esc(s.bookingUrl)}" target="_blank" rel="noopener">🔗 예약</a>` : ''}
+      ${typeof s.lat === 'number' ? `<button type="button" class="btn" data-onmap="${s.id}">지도</button>` : ''}
+      ${s.nameZh || s.addressZh ? `<button type="button" class="btn" data-driver="${s.id}">기사님께</button>` : ''}
+      ${s.bookingUrl ? `<a class="btn" href="${esc(s.bookingUrl)}" target="_blank" rel="noopener">예약</a>` : ''}
     </div>
+    ${s.status === 'confirmed' ? airportPlan(s) : ''}
   </article>`;
 }
 
@@ -96,23 +102,23 @@ function stayCard(s) {
 function airportPlan(s) {
   const m = stayMetrics(s);
   const rf = returnFlight();
-  if (!m) return '<p class="notice">📍 확정 숙소의 위치를 입력하면 공항 이동 시간을 계산해 드려요.</p>';
+  if (!m) return '<p class="notice">숙소 위치를 입력하면 공항 이동 시간을 계산해 드려요.</p>';
   const lines = [];
   const hasTo = S.data.transports.some((t) => t.date === s.checkIn && t.to.includes(s.name));
   const hasFrom = rf && S.data.transports.some((t) => t.date === rf.date && t.type !== 'flight' && t.from.includes(s.name));
   if (rf?.depart) {
     const arriveBy = minusMinutes(rf.depart, 120);
     const leave = minusMinutes(arriveBy, m.min + 10);
-    lines.push(`<li><b>${fmtDate(rf.date)} 귀국</b> ${esc(rf.depart)} 출발 → 공항 <b>${arriveBy}</b> 도착 목표 → 숙소에서 <b>${leave}</b>쯤 출발 (디디 약 ${m.min}분)
-      ${hasFrom ? '<span class="tag tag-gray">교통편 등록됨</span>' : `<button type="button" class="btn sm" data-add-airport="from">교통편에 추가</button>`}</li>`);
+    lines.push(`<li><b>${fmtDate(rf.date)} 귀국</b> · ${esc(rf.depart)} 출발 → 공항 <b>${arriveBy}</b> 도착 목표 → 숙소에서 <b>${leave}</b>쯤 출발 (디디 약 ${m.min}분)<br>
+      ${hasFrom ? '<span class="tag tag-gray">교통편 등록됨</span>' : `<button type="button" class="btn sm lime" data-add-airport="from">교통편에 추가</button>`}</li>`);
   }
-  lines.push(`<li><b>${fmtDate(s.checkIn)} 도착</b> 푸둥 T1 → ${esc(s.name)} (디디 약 ${m.min}분 / 자기부상열차+지하철도 가능)
-    ${hasTo ? '<span class="tag tag-gray">교통편 등록됨</span>' : `<button type="button" class="btn sm" data-add-airport="to">교통편에 추가</button>`}</li>`);
-  return `<section class="card plan">
-    <h3>✈️ 공항 이동 계획 <small class="muted">(직선거리 기준 대략치)</small></h3>
+  lines.push(`<li><b>${fmtDate(s.checkIn)} 도착</b> · 푸둥 T1 → 숙소 (디디 약 ${m.min}분 / 자기부상열차+지하철도 가능)<br>
+    ${hasTo ? '<span class="tag tag-gray">교통편 등록됨</span>' : `<button type="button" class="btn sm lime" data-add-airport="to">교통편에 추가</button>`}</li>`);
+  return `<details class="plan" ${hasTo && hasFrom ? '' : 'open'}>
+    <summary>공항 이동 계획</summary>
     <ul>${lines.join('')}</ul>
-    <p class="hint">새벽엔 지하철 첫차 시간이 애매할 수 있어 디디(DiDi) 예약 호출을 권장해요.</p>
-  </section>`;
+    <p class="hint">직선거리 기준 대략치. 새벽엔 지하철 첫차가 애매해 디디 예약 호출을 권장해요.</p>
+  </details>`;
 }
 
 function addAirportTransport(dir) {
