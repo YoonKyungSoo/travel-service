@@ -1,0 +1,173 @@
+// 데이터 저장소
+//  · js/config.js에 Firebase 설정이 있으면 → Firestore (실시간 공유 + 오프라인 캐시)
+//  · 없으면 → localStorage (이 기기에만 저장)
+// 화면 코드는 어느 쪽이든 같은 함수(watch/add/update/remove)를 씁니다.
+import { firebaseConfig } from './config.js';
+import { newId } from './util.js';
+
+const FB = 'https://www.gstatic.com/firebasejs/12.0.0';
+
+/** Firestore는 undefined 값을 거부하므로 제거 */
+const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+const stripId = ({ id, ...rest }) => rest; // eslint-disable-line no-unused-vars
+
+// ───────────────────── Firestore ─────────────────────
+async function createCloudStore() {
+  const [{ initializeApp }, A, F] = await Promise.all([
+    import(`${FB}/firebase-app.js`),
+    import(`${FB}/firebase-auth.js`),
+    import(`${FB}/firebase-firestore.js`),
+  ]);
+  const app = initializeApp(firebaseConfig);
+  let db;
+  try {
+    db = F.initializeFirestore(app, {
+      localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }),
+    });
+  } catch {
+    db = F.getFirestore(app); // 사파리 사생활 보호 모드 등 캐시 불가 환경
+  }
+
+  // 익명 로그인 (화면에 보이지 않음). 보안 규칙에서 "로그인한 요청만" 허용하기 위함
+  const auth = A.getAuth(app);
+  const authReady = new Promise((resolve) => {
+    const off = A.onAuthStateChanged(auth, (u) => { if (u) { off(); resolve(); } });
+    A.signInAnonymously(auth).catch((e) => console.warn('익명 로그인 실패(오프라인일 수 있음)', e));
+  });
+
+  const tripRef = (key) => F.doc(db, 'trips', key);
+  const colRef = (key, col) => F.collection(db, 'trips', key, col);
+  const docRef = (key, col, id) => F.doc(db, 'trips', key, col, id);
+
+  // 쓰기는 await 하지 않음 → 오프라인에서도 화면에 즉시 반영되고, 연결되면 자동 전송
+  const fire = (p) => p.catch((e) => console.error(e));
+
+  return {
+    mode: 'cloud',
+    ready: () => authReady,
+    async getTrip(key) {
+      await authReady;
+      try {
+        const s = await F.getDoc(tripRef(key));
+        return s.exists() ? s.data() : null;
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
+    },
+    watchTrip(key, cb) {
+      let off = () => {}, alive = true;
+      authReady.then(() => {
+        if (alive) off = F.onSnapshot(tripRef(key), (s) => cb(s.exists() ? s.data() : null), (e) => { console.error(e); cb(null); });
+      });
+      return () => { alive = false; off(); };
+    },
+    async createTrip(key, trip, seed) {
+      await authReady;
+      const batch = F.writeBatch(db);
+      batch.set(tripRef(key), clean({ ...trip, createdAt: Date.now() }));
+      for (const [col, items] of Object.entries(seed || {})) {
+        for (const it of items) batch.set(docRef(key, col, newId(12)), clean({ ...it, createdAt: Date.now() }));
+      }
+      await batch.commit();
+    },
+    async updateTrip(key, patch) {
+      await authReady;
+      fire(F.updateDoc(tripRef(key), clean(patch)));
+    },
+    watch(key, col, cb) {
+      let off = () => {}, alive = true;
+      authReady.then(() => {
+        if (alive) off = F.onSnapshot(colRef(key, col), (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))), (e) => console.error(col, e));
+      });
+      return () => { alive = false; off(); };
+    },
+    async add(key, col, data) {
+      await authReady;
+      const id = newId(12);
+      fire(F.setDoc(docRef(key, col, id), clean({ ...stripId(data), createdAt: Date.now() })));
+      return id;
+    },
+    async update(key, col, id, patch) {
+      await authReady;
+      // 비운 칸(undefined)은 서버에서도 지우기
+      const data = Object.fromEntries(Object.entries({ ...stripId(patch), updatedAt: Date.now() }).map(([k, v]) => [k, v === undefined ? F.deleteField() : v]));
+      fire(F.updateDoc(docRef(key, col, id), data));
+    },
+    async remove(key, col, id) {
+      await authReady;
+      fire(F.deleteDoc(docRef(key, col, id)));
+    },
+  };
+}
+
+// ───────────────────── localStorage ─────────────────────
+function createLocalStore() {
+  const listeners = new Map();
+  const k = (key, col) => `ts:${key}${col ? ':' + col : ''}`;
+  const read = (kk, fb) => {
+    try { const v = localStorage.getItem(kk); return v ? JSON.parse(v) : fb; } catch { return fb; }
+  };
+  const emit = (kk) => listeners.get(kk)?.forEach((fn) => fn());
+  const write = (kk, v) => {
+    try { localStorage.setItem(kk, JSON.stringify(v)); } catch (e) { console.error(e); }
+    emit(kk);
+  };
+  const on = (kk, fn) => {
+    if (!listeners.has(kk)) listeners.set(kk, new Set());
+    listeners.get(kk).add(fn);
+    return () => listeners.get(kk)?.delete(fn);
+  };
+  window.addEventListener('storage', (e) => e.key && emit(e.key)); // 다른 탭 변경 반영
+
+  return {
+    mode: 'local',
+    ready: async () => {},
+    getTrip: async (key) => read(k(key), null),
+    watchTrip(key, cb) {
+      const fire = () => cb(read(k(key), null));
+      fire();
+      return on(k(key), fire);
+    },
+    async createTrip(key, trip, seed) {
+      for (const [col, items] of Object.entries(seed || {})) {
+        write(k(key, col), items.map((it) => ({ ...it, id: newId(12), createdAt: Date.now() })));
+      }
+      write(k(key), { ...trip, createdAt: Date.now() });
+    },
+    async updateTrip(key, patch) {
+      write(k(key), { ...read(k(key), {}), ...patch });
+    },
+    watch(key, col, cb) {
+      const fire = () => cb(read(k(key, col), []));
+      fire();
+      return on(k(key, col), fire);
+    },
+    async add(key, col, data) {
+      const id = newId(12);
+      write(k(key, col), [...read(k(key, col), []), { ...stripId(data), id, createdAt: Date.now() }]);
+      return id;
+    },
+    async update(key, col, id, patch) {
+      write(k(key, col), read(k(key, col), []).map((x) => (x.id === id ? { ...x, ...stripId(patch), updatedAt: Date.now() } : x)));
+    },
+    async remove(key, col, id) {
+      write(k(key, col), read(k(key, col), []).filter((x) => x.id !== id));
+    },
+  };
+}
+
+export const hasFirebase = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+
+export async function createStore() {
+  if (!hasFirebase) return createLocalStore();
+  try {
+    return await createCloudStore();
+  } catch (e) {
+    // Firebase 스크립트를 못 받은 경우 (중국 현지 와이파이 등)
+    console.error('Firebase 로드 실패 → 이 기기 저장으로 동작', e);
+    const s = createLocalStore();
+    s.mode = 'local-fallback';
+    return s;
+  }
+}
