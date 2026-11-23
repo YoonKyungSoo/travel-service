@@ -90,7 +90,15 @@ export function wgs2gcj(lat, lng) {
 }
 /** "31.2304, 121.4737" → [lat, lng]. 순서가 반대여도 처리. 상하이 주변이 아니면 null */
 export function parseLatLng(text) {
-  const nums = String(text).match(/-?\d+(?:\.\d+)?/g)?.map(Number);
+  const s = String(text);
+  // 구글맵 링크: 장소 핀 좌표(!3d위도!4d경도)가 가장 정확, 없으면 화면 중심(@위도,경도)
+  const pin = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  const at = s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  const q = s.match(/[?&](?:q|query|ll)=(-?\d+\.\d+)(?:,|%2C)(-?\d+\.\d+)/i);
+  const hit = pin || q || at;
+  if (hit) return parseLatLng(`${hit[1]}, ${hit[2]}`);
+  if (/^https?:\/\//.test(s.trim())) return null; // 좌표 없는 링크(공유용 짧은 링크 등)
+  const nums = s.match(/-?\d+(?:\.\d+)?/g)?.map(Number);
   if (!nums || nums.length < 2) return null;
   let [a, b] = nums;
   if (a > 90) [a, b] = [b, a];

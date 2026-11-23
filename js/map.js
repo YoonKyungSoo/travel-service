@@ -336,7 +336,7 @@ export function locationFieldHtml(lat, lng, required) {
        <button type="button" class="btn sm" data-pick>🗺️ 지도에서 선택</button>
        <button type="button" class="btn sm" data-myloc>📍 내 위치</button>
      </div>`,
-    '고덕지도(Amap)에서 복사한 좌표를 붙여넣어도 됩니다.',
+    '구글맵 좌표(예: 31.2397, 121.4998)나 구글맵 주소창 링크를 붙여넣어도 돼요.',
   );
 }
 
@@ -375,7 +375,10 @@ export function takeLocation(v, required) {
     return true;
   }
   const ll = parseLatLng(raw);
-  if (!ll) { toast('좌표 형식이 올바르지 않아요. 예) 31.2397, 121.4998'); return false; }
+  if (!ll) {
+    toast(/^https?:/.test(raw.trim()) ? '이 링크엔 좌표가 없어요. 구글맵에서 장소를 꾹 눌러 좌표를 복사해 주세요.' : '좌표 형식이 올바르지 않아요. 예) 31.2397, 121.4998');
+    return false;
+  }
   [v.lat, v.lng] = ll;
   if (!v.district) v.district = detectDistrict(v.lat, v.lng);
   return true;
