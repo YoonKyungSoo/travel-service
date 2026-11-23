@@ -456,43 +456,182 @@ export function myLocation() {
   });
 }
 
-/** 폼 안의 위치 입력칸 HTML */
-export function locationFieldHtml(lat, lng, required, hint) {
-  const val = typeof lat === 'number' ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : '';
-  return field(
-    `위치${required ? ' *' : ''}`,
-    `<input name="_loc" value="${val}" placeholder="31.2397, 121.4998" inputmode="text" autocomplete="off" />
-     <div class="btn-row tight">
-       <button type="button" class="btn sm" data-pick>지도에서 선택</button>
-       <button type="button" class="btn sm" data-myloc>내 위치</button>
-     </div>`,
-    hint || '구글맵 좌표(예: 31.2397, 121.4998)나 구글맵 주소창 링크를 붙여넣어도 돼요.',
-  );
+// ───────── 위치 입력: 이름·주소 검색 → 결과 선택 → 미리보기 지도에서 확인·수정 ─────────
+const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
+const CJK = /[一-鿿]/;
+
+/** OpenStreetMap 검색 (상하이 안에서만). 결과 좌표는 GCJ-02로 변환 */
+async function searchPlaces(q) {
+  const url = `${NOMINATIM}?format=jsonv2&addressdetails=1&namedetails=1&limit=8&bounded=1&viewbox=120.85,31.88,122.0,30.68&accept-language=zh-CN,ko,en&q=${encodeURIComponent(q)}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(res.status);
+  const seen = new Set();
+  return (await res.json()).map((r) => {
+    const [lat, lng] = wgs2gcj(+r.lat, +r.lon);
+    const parts = r.display_name.split(',').map((s) => s.trim());
+    const qu = parts.find((s) => /区$/.test(s)) || '';
+    const a = r.address || {};
+    const road = [a.road, a.pedestrian].find((s) => s && CJK.test(s)) || '';
+    const nameZh = r.namedetails?.['name:zh'] || r.namedetails?.name || r.name || parts[0];
+    const kind = placeKind(r.category, r.type);
+    return {
+      lat, lng, nameZh, kind,
+      district: detectDistrict(lat, lng),
+      addressZh: `上海市${qu}${road}${road && a.house_number ? a.house_number + '号' : ''}`,
+      // 중국어 지명만 (영어·러시아어 등 섞인 이름은 빼기), 상하이시·중국·우편번호 제외
+      line: [...new Set(parts.slice(1).filter((s) => CJK.test(s) && !/^(上海市|中国)$/.test(s)))].slice(0, 3).join(' · '),
+      rank: kind.rank,
+    };
+  }).filter((r) => {
+    if (!r.district) return false; // 상하이 밖 (쑤저우 등)
+    const k = `${r.nameZh}|${r.kind.label}|${r.lat.toFixed(3)}|${r.lng.toFixed(3)}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).sort((a, b) => a.rank - b.rank);
 }
 
-/** 위치칸 버튼 연결. 위치가 정해지면 구(district) 선택칸 자동 설정 */
+/** 검색 결과 종류 (같은 이름이 여러 개 나올 때 구분용). rank가 낮을수록 위에 */
+function placeKind(cat, type) {
+  const T = {
+    attraction: '관광지', museum: '박물관', viewpoint: '전망대', park: '공원', garden: '정원', place_of_worship: '사원',
+    restaurant: '식당', fast_food: '식당', cafe: '카페', bar: '바', pub: '바', ice_cream: '디저트',
+    mall: '쇼핑몰', department_store: '백화점', marketplace: '시장', hotel: '호텔', hostel: '호스텔', guest_house: '숙소',
+    theme_park: '테마파크', theatre: '공연장', pedestrian: '보행가', ferry_terminal: '선착장',
+  };
+  if (T[type]) return { label: T[type], rank: 0 };
+  if (['tourism', 'amenity', 'shop', 'leisure', 'historic'].includes(cat)) return { label: '장소', rank: 1 };
+  if (cat === 'building') return { label: '건물', rank: 2 };
+  if (type === 'station' || type === 'subway_entrance' || cat === 'railway') return { label: '지하철역', rank: 3 };
+  if (type === 'bus_stop' || cat === 'public_transport') return { label: '버스정류장', rank: 4 };
+  if (cat === 'highway') return { label: '도로', rank: 3 };
+  if (cat === 'place' || cat === 'boundary') return { label: '지역', rank: 3 };
+  return { label: '기타', rank: 5 };
+}
+
+/** 폼 안의 위치 입력칸 HTML. 실제 값은 숨은 칸(_loc)에 들어감 */
+export function locationFieldHtml(lat, lng, required, hint) {
+  const val = typeof lat === 'number' ? `${lat.toFixed(6)}, ${lng.toFixed(6)}` : '';
+  return `<div class="field loc-field">
+    <span class="field-label">위치${required ? ' *' : ''}</span>
+    <input type="hidden" name="_loc" value="${val}" />
+    <div class="loc-search">
+      <input type="search" data-q placeholder="장소 이름 · 주소 검색 (예: 豫园, Yu Garden)" autocomplete="off" enterkeyhint="search" />
+      <button type="button" class="btn primary" data-qbtn aria-label="검색"><svg class="i"><use href="#i-search"/></svg></button>
+    </div>
+    <ul class="loc-results" data-results hidden></ul>
+    <div class="loc-picked" data-picked hidden>
+      <div class="loc-map" data-minimap></div>
+      <p class="loc-sum"><span data-sum></span><button type="button" class="btn sm ghost" data-clear>위치 지우기</button></p>
+      <small class="hint">핀이 틀렸으면 핀을 끌어서 옮기세요.</small>
+    </div>
+    <details class="loc-more">
+      <summary>검색에 안 나오면</summary>
+      <div class="btn-row tight">
+        <button type="button" class="btn sm" data-pick>큰 지도에서 찍기</button>
+        <button type="button" class="btn sm" data-myloc>내 위치</button>
+      </div>
+      <input type="text" data-paste placeholder="구글맵 좌표나 주소창 링크 붙여넣기" autocomplete="off" />
+    </details>
+    <small class="hint">${hint || '한글보다 중국어·영어로 검색하면 잘 나와요.'}</small>
+  </div>`;
+}
+
+/** 위치칸 동작 연결. 위치가 정해지면 구·중국어 이름/주소 자동 입력 */
 export function bindLocationField(form) {
+  const root = form.querySelector('.loc-field');
   const loc = form.elements._loc;
-  const setLoc = ([lat, lng]) => {
-    loc.value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    autoDistrict();
+  const q = root.querySelector('[data-q]');
+  const results = root.querySelector('[data-results]');
+  const picked = root.querySelector('[data-picked]');
+  const sum = root.querySelector('[data-sum]');
+  let mini = null, marker = null, found = [];
+
+  const fillIfEmpty = (name, value) => {
+    const el = form.elements[name];
+    if (el && value && !el.value.trim()) el.value = value;
   };
-  const autoDistrict = () => {
-    const ll = parseLatLng(loc.value);
+  const describe = (lat, lng) => {
+    const d = detectDistrict(lat, lng);
+    sum.textContent = d ? `${districtName(d)} · 선택됨` : '상하이 밖이거나 구를 알 수 없는 위치';
     const sel = form.elements.district;
-    if (ll && sel) {
-      const d = detectDistrict(ll[0], ll[1]);
-      if (d) sel.value = d;
-    }
+    if (sel && d) sel.value = d;
   };
-  loc.addEventListener('change', autoDistrict);
-  form.querySelector('[data-pick]').addEventListener('click', async () => {
+  const showMini = (lat, lng) => {
+    picked.hidden = false;
+    if (!mini) {
+      mini = L.map(root.querySelector('[data-minimap]'), { zoomControl: false, attributionControl: false, dragging: true, tap: false })
+        .setView([lat, lng], 16);
+      L.tileLayer(TILE_URL, { subdomains: '1234', maxZoom: 18, className: 'street-tiles' }).addTo(mini);
+      marker = L.marker([lat, lng], {
+        draggable: true,
+        icon: L.divIcon({ className: 'pin-wrap', html: '<div class="pin cat-etc"><svg class="i"><use href="#c-etc"/></svg></div>', iconSize: [0, 0] }),
+      }).addTo(mini);
+      marker.on('dragend', () => {
+        const ll = marker.getLatLng();
+        loc.value = `${ll.lat.toFixed(6)}, ${ll.lng.toFixed(6)}`;
+        describe(ll.lat, ll.lng);
+      });
+    } else {
+      marker.setLatLng([lat, lng]);
+      mini.setView([lat, lng], 16);
+    }
+    setTimeout(() => mini.invalidateSize(), 60);
+  };
+  const setLoc = (lat, lng) => {
+    loc.value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    describe(lat, lng);
+    showMini(lat, lng);
+  };
+
+  async function run() {
+    const text = q.value.trim();
+    if (text.length < 2) return;
+    results.hidden = false;
+    results.innerHTML = '<li class="loc-msg">검색 중…</li>';
+    try {
+      found = await searchPlaces(text);
+      results.innerHTML = found.length
+        ? found.map((r, i) => `<li><button type="button" data-hit="${i}"><b>${esc(r.nameZh)} <em class="cat-tag">${esc(r.kind.label)}</em></b><small>${esc(districtName(r.district))}${r.line ? ' · ' + esc(r.line) : ''}</small></button></li>`).join('')
+        : `<li class="loc-msg">검색 결과가 없어요.${CJK.test(text) ? '' : ' 중국어나 영어로 검색해 보세요.'} 아래 "검색에 안 나오면"을 써도 돼요.</li>`;
+    } catch {
+      results.innerHTML = '<li class="loc-msg">검색 서버에 연결하지 못했어요. 아래 "큰 지도에서 찍기"를 써 주세요.</li>';
+    }
+  }
+  q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+  root.querySelector('[data-qbtn]').addEventListener('click', run);
+  results.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-hit]');
+    if (!b) return;
+    const r = found[b.dataset.hit];
+    setLoc(r.lat, r.lng);
+    if (CJK.test(r.nameZh)) fillIfEmpty('nameZh', r.nameZh);
+    if (/区.+/.test(r.addressZh)) fillIfEmpty('addressZh', r.addressZh); // 도로명까지 있을 때만
+    results.hidden = true;
+  });
+  root.querySelector('[data-clear]').addEventListener('click', () => {
+    loc.value = '';
+    picked.hidden = true;
+  });
+  root.querySelector('[data-pick]').addEventListener('click', async () => {
     const ll = await pickOnMap();
-    if (ll) setLoc(ll);
+    if (ll) setLoc(ll[0], ll[1]);
   });
-  form.querySelector('[data-myloc]').addEventListener('click', async () => {
-    try { setLoc(await myLocation()); } catch { toast('위치를 가져오지 못했어요. 위치 권한을 확인하세요.'); }
+  root.querySelector('[data-myloc]').addEventListener('click', async () => {
+    try { const [a, b] = await myLocation(); setLoc(a, b); } catch { toast('위치를 가져오지 못했어요. 위치 권한을 확인하세요.'); }
   });
+  root.querySelector('[data-paste]').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
+  root.querySelector('[data-paste]').addEventListener('change', (e) => {
+    const raw = e.target.value.trim();
+    if (!raw) return;
+    const ll = parseLatLng(raw);
+    if (!ll) return toast(/^https?:/.test(raw) ? '이 링크엔 좌표가 없어요. 구글맵에서 장소를 꾹 눌러 좌표를 복사해 주세요.' : '좌표 형식이 올바르지 않아요.');
+    setLoc(ll[0], ll[1]);
+  });
+
+  // 수정 화면: 기존 위치 미리보기
+  const cur = parseLatLng(loc.value);
+  if (cur) setLoc(cur[0], cur[1]);
 }
 
 /** 폼 값의 _loc → lat/lng */
@@ -505,10 +644,7 @@ export function takeLocation(v, required) {
     return true;
   }
   const ll = parseLatLng(raw);
-  if (!ll) {
-    toast(/^https?:/.test(raw.trim()) ? '이 링크엔 좌표가 없어요. 구글맵에서 장소를 꾹 눌러 좌표를 복사해 주세요.' : '좌표 형식이 올바르지 않아요. 예) 31.2397, 121.4998');
-    return false;
-  }
+  if (!ll) { toast('위치를 다시 선택해 주세요.'); return false; }
   [v.lat, v.lng] = ll;
   if (!v.district) v.district = detectDistrict(v.lat, v.lng);
   return true;
@@ -550,7 +686,7 @@ export function placeForm(p = null, preset = null) {
     fields: `
       ${field('이름 *', input('name', p?.name, 'required placeholder="예) 와이탄 야경" autocomplete="off"'))}
       ${field('분류', segmented('category', Object.fromEntries(Object.entries(PLACE_CATS).map(([k, c]) => [k, c.label])), p?.category || 'sight'))}
-      ${locationFieldHtml(lat, lng, false, '구글맵 좌표나 주소창 링크를 붙여넣어도 돼요. 체인점·배달처럼 위치가 정해지지 않았으면 비워두세요.')}
+      ${locationFieldHtml(lat, lng, false, '한글보다 중국어·영어로 검색하면 잘 나와요. 체인점·배달처럼 위치가 정해지지 않았으면 비워두세요.')}
       ${field('구', select('district', districtOptions(), presetDistrict))}
       ${field('중국어 이름', input('nameZh', p?.nameZh, 'placeholder="外滩" autocomplete="off"'), '기사님께 보여주기 · 고덕 검색에 쓰여요.')}
       ${field('중국어 주소', input('addressZh', p?.addressZh, 'placeholder="上海市黄浦区中山东一路" autocomplete="off"'))}

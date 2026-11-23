@@ -684,3 +684,24 @@ body.picking #map { cursor: crosshair; }
   .toast { top: 20px; margin-left: calc(var(--side) / 2); }
   .row:hover { background: var(--surface-2); }
 }
+
+/* ─────────────── 위치 입력 (검색 → 선택 → 미리보기) ─────────────── */
+.loc-search { display: grid; grid-template-columns: 1fr 48px; gap: 6px; }
+.loc-search input, .loc-more input {
+  width: 100%; min-height: 48px; padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); font-size: 16px;
+}
+.loc-search input:focus, .loc-more input:focus { outline: 0; border-color: var(--text); }
+.loc-search .btn { min-height: 48px; padding: 0; }
+.loc-results { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); max-height: 300px; overflow-y: auto; }
+.loc-results li + li { border-top: 1px solid var(--line); }
+.loc-results button { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 0; background: transparent; text-align: left; }
+.loc-results button:active { background: var(--surface-2); }
+.loc-results b { font: 700 15px var(--font-zh); }
+.loc-results small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loc-msg { padding: 12px; color: var(--muted); font-size: 13.5px; }
+.loc-picked { display: flex; flex-direction: column; gap: 6px; }
+.loc-map { height: 180px; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--map-bg); }
+.loc-sum { display: flex; align-items: center; justify-content: space-between; margin: 0; font-weight: 700; font-size: 14px; }
+.loc-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); padding: 4px 0; }
+.loc-more input { margin-top: 8px; }
