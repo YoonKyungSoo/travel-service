@@ -285,7 +285,7 @@ function showLanding(msg) {
         <h2>초대 코드로 참가</h2>
         <div class="grid2">
           <label class="field"><span class="field-label">초대 코드</span><input name="code" placeholder="ABC-234" autocomplete="off" autocapitalize="characters" required /></label>
-          <label class="field"><span class="field-label">내 이름</span><input name="name" placeholder="예) 경수" autocomplete="off" required /></label>
+          <label class="field"><span class="field-label">내 이름</span><input name="name" placeholder="예) 홍길동" autocomplete="off" required /></label>
         </div>
         <button type="submit" class="btn primary big">참가하기 →</button>
       </form>
@@ -309,7 +309,7 @@ function showJoin(code, msg) {
       <form id="joinForm" class="form card">
         <h2>초대 코드로 참가</h2>
         <label class="field"><span class="field-label">초대 코드</span><input name="code" value="${esc(fmtCode(code))}" placeholder="ABC-234" autocomplete="off" autocapitalize="characters" required /></label>
-        <label class="field"><span class="field-label">내 이름</span><input name="name" placeholder="예) 경수" autocomplete="off" required /></label>
+        <label class="field"><span class="field-label">내 이름</span><input name="name" placeholder="예) 홍길동" autocomplete="off" required /></label>
         <p class="hint">같이 가는 사람들 사이에서 부를 이름이에요. 이미 등록된 이름과 같게 쓰면 그 사람으로 들어가요.</p>
         <button type="submit" class="btn primary big">참가하기 →</button>
       </form>
@@ -364,8 +364,8 @@ function newTripFormHtml() {
       <label class="field"><span class="field-label">출발</span><input type="date" name="startDate" required /></label>
       <label class="field"><span class="field-label">도착</span><input type="date" name="endDate" required /></label>
     </div>
-    <label class="field"><span class="field-label">내 이름</span><input name="m1" placeholder="예) 경수" required autocomplete="off" /></label>
-    <label class="field"><span class="field-label">같이 가는 사람 <small>(쉼표로 구분, 나중에 초대 코드로 참가해도 돼요)</small></span><input name="others" placeholder="예) 선영, 민지" autocomplete="off" /></label>
+    <label class="field"><span class="field-label">내 이름</span><input name="m1" placeholder="예) 홍길동" required autocomplete="off" /></label>
+    <label class="field"><span class="field-label">같이 가는 사람 <small>(쉼표로 구분, 나중에 초대 코드로 참가해도 돼요)</small></span><input name="others" placeholder="예) 김철수, 이영희" autocomplete="off" /></label>
     <button type="submit" class="btn primary big">만들기 →</button>
     <p class="hint">만들면 <b>초대 코드</b>가 나와요. 코드를 받은 사람만 이 여행에 들어올 수 있어요.</p>
   </form>`;
