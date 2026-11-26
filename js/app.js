@@ -193,8 +193,11 @@ async function applyPack(key) {
   if (places.length) toast(`추천 장소 ${places.length}곳과 일정을 불러왔어요.`);
 }
 
+const APP_TITLE = '같이 가는 여행';
+
 function paintHeader() {
   $('tripName').textContent = S.trip.name;
+  document.title = `${S.trip.name} · ${APP_TITLE}`; // 브라우저 탭에 지금 여행 이름
   const mode = S.store.mode;
   // 모바일 상단 바에는 날짜 옆에 저장 방식을 짧게 표시
   const short = mode === 'cloud' ? '' : mode === 'local' ? ' · 이 기기 저장' : ' · 연결 실패';
@@ -247,6 +250,7 @@ function forgetTrip(key) {
 }
 
 function hideApp() {
+  document.title = APP_TITLE;
   nav.hidden = true;
   mapEl.hidden = true;
   pageEl.hidden = true;
