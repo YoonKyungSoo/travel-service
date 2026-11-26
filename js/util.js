@@ -88,6 +88,11 @@ export function wgs2gcj(lat, lng) {
   dLng = (dLng * 180) / ((A / sq) * Math.cos(radLat) * Math.PI);
   return [lat + dLat, lng + dLng];
 }
+/** GCJ-02 → WGS-84 근사 (오차 수 m) */
+export function gcj2wgs(lat, lng) {
+  const [gl, gn] = wgs2gcj(lat, lng);
+  return [lat - (gl - lat), lng - (gn - lng)];
+}
 /** "31.2304, 121.4737" → [lat, lng]. 순서가 반대여도 처리. 상하이 주변이 아니면 null */
 export function parseLatLng(text) {
   const s = String(text);

@@ -98,7 +98,10 @@ export function formModal({ title, fields, canDelete, onSubmit, onDelete, bind }
 
 // ── 기사님께 보여주기 ──
 const driver = document.getElementById('driver');
-export function showDriver(nameZh, addrZh) {
+export function showDriver(nameZh, addrZh, ask = '师傅，请带我去这里') {
+  const a = document.getElementById('driverAsk');
+  a.textContent = ask;
+  a.hidden = !ask;
   document.getElementById('driverName').textContent = nameZh || '';
   document.getElementById('driverAddr').textContent = addrZh || '';
   driver.hidden = false;

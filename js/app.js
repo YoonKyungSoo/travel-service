@@ -10,6 +10,7 @@ import { renderSchedule } from './schedule.js';
 import { renderStay } from './stay.js';
 import { renderChecklist } from './checklist.js';
 import { renderLinks } from './links.js';
+import { initTopInfo, paintMode } from './topinfo.js';
 import { renderExpense } from './expense.js';
 
 const PAGES = { schedule: renderSchedule, stay: renderStay, checklist: renderChecklist, expense: renderExpense, links: renderLinks };
@@ -177,6 +178,8 @@ function paintHeader() {
   $('dday').hidden = !dd;
   $('modeBadge').textContent = mode === 'cloud' ? '● 실시간 공유 중' : mode === 'local' ? '이 기기에만 저장 중' : '서버 연결 실패 · 이 기기에만 저장';
   $('modeBadge').className = mode === 'cloud' ? 'ok' : 'warn';
+  initTopInfo($('topInfo')); // 날씨·환율 (처음 한 번 연결, 이후엔 다시 그리기)
+  paintMode();
 }
 
 function askWho() {

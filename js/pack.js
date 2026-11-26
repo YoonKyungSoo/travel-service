@@ -3,7 +3,7 @@
 // 문서 ID가 고정이라 두 사람이 동시에 열어도 같은 문서에 덮어써질 뿐 중복되지 않습니다.
 import { wgs2gcj } from './util.js';
 
-export const PACK_VERSION = 7;
+export const PACK_VERSION = 8;
 
 // 좌표는 WGS-84(OpenStreetMap 기준) → 불러올 때 GCJ-02로 변환
 // approx: 정확한 지점이 아니라 대표 위치 (체인점 등)
@@ -37,7 +37,7 @@ const RAW_PLACES = [
 
   // ───── 먹거리 ─────
   P('nanxiang', { name: '난상만두점 (샤오룽바오)', nameZh: '南翔馒头店', addressZh: '上海市黄浦区豫园路85号', category: 'food', tags: ['현지음식', '샤오룽바오'], howto: '예원 안', wgs: [31.22853, 121.48710], date: '2026-12-11' }),
-  P('xiaoyang', { name: '샹젠바오 (소양생전)', nameZh: '小杨生煎', category: 'food', tags: ['현지음식', '체인'], howto: '체인점이라 지점이 많음 (예: 난징둥루)', memo: '대표 위치 · 가까운 지점으로 가면 돼요.', wgs: [31.2365, 121.4705], approx: true }),
+  P('xiaoyang', { name: '샹젠바오 · 소양생전 황허루점', nameZh: '小杨生煎(黄河路店)', addressZh: '上海市黄浦区黄河路97号', category: 'food', tags: ['현지음식', '체인'], howto: '1·2·8호선 인민광장역, 도보 약 5분', memo: '상하이식 군만두(生煎) 대표 체인. 1인 약 30위안. 지점이 많아서 가까운 곳으로 가도 돼요.', wgs: [31.2367, 121.4693] }),
   P('dahuchun', { name: '다후춘 (생전만두)', nameZh: '大壶春', addressZh: '上海市黄浦区四川中路136号', category: 'food', tags: ['만두'], wgs: [31.23670, 121.48477] }),
   P('ada', { name: '총유빙 (아대총유빙)', nameZh: '阿大葱油饼', addressZh: '上海市黄浦区瑞金二路120弄', category: 'food', tags: ['디저트·간식', '노점'], memo: '유명 노점이라 줄이 길 수 있어요.', wgs: [31.21332, 121.46078] }),
   P('wangbaohe', { name: '상하이 털게 · 왕바오허', nameZh: '王宝和酒家', addressZh: '上海市黄浦区福州路603号', category: 'food', tags: ['현지음식', '12월 제철'], memo: '12월 제철 털게(大闸蟹) 대표 전문점.', wgs: [31.23454, 121.47490] }),
@@ -46,8 +46,8 @@ const RAW_PLACES = [
   P('haidilao', { name: '하이디라오 훠궈', nameZh: '海底捞火锅', category: 'food', tags: ['훠궈', '고기', '24시간'], howto: '지점이 많고 24시간 지점도 있음', memo: '하이디라오의 나라에서 훠궈는 무조건! 한국의 반 가격, 한국에 없는 메뉴 많음.', photo: 'haidilao', wgs: [31.23915, 121.47922], approx: true, date: '2026-12-12' }),
   P('henjiu', { name: '헌지우이치엔 양꼬치 · 제일백화점점', nameZh: '很久以前羊肉串(南京东路第一百货店)', addressZh: '上海市黄浦区南京东路800号 第一百货', category: 'food', tags: ['양꼬치', '맥주'], howto: '1·2·8호선 인민광장역 / 2·10호선 난징둥루역', memo: '여행 때마다 2번 이상 가는 인생 양꼬치. 부추무침·국수·볶음밥·우유식빵 통집, 맥주는 필수.\n지점 중 줄이 제일 길어요. 위챗 미니프로그램으로 줄서기. 톈쯔팡 日月光점, 동방명주 근처 尚悦湾점도 있어요.', photo: 'henjiu', wgs: [31.2348, 121.4737], wish: true }),
   P('hongkuijia', { name: '홍쿠이지아 마라가재 · 인민광장점', nameZh: '红盔甲(人民广场店)', addressZh: '上海市黄浦区金陵东路500号', category: 'food', tags: ['해산물', '마라가재'], howto: '8·14호선 다스제(大世界)역 근처, 인민광장에서 도보', memo: '대표 메뉴는 마라가재볶음(麻辣小龙虾) — 이거 먹으러 가는 곳! 한국인 입맛 저격, 다 손질해줘서 먹기도 편함.\n지점 중 인기 1위라 웨이팅이 길 수 있어요. 영업 11:00–14:00 · 16:30–02:00 (예전 정보 · 디엔핑에서 확인).', photo: 'hongkuijia', wgs: [31.2306, 121.4779], wish: true }),
-  P('laila', { name: '라이라이 샤오룽바오', nameZh: '莱莱小笼', category: 'food', tags: ['샤오룽바오', '미쉐린'], howto: '난징둥루 근처', memo: '미쉐린 가이드에 소개된 샤오룽바오 맛집. 웨이팅은 있지만 회전이 빨라요.\n블로그 추천: 게살 샤오룽바오(蟹粉小笼)가 특히 맛있음. 돈까스는 무난.', wgs: [31.23626, 121.47699], wish: true }),
-  P('dintaifung', { name: '딘타이펑 (신톈디)', nameZh: '鼎泰丰', category: 'food', tags: ['딤섬'], wgs: [31.22101, 121.47083] }),
+  P('laila', { name: '라이라이 샤오룽바오', nameZh: '乔艾莱莱小笼(天津路店)', addressZh: '上海市黄浦区天津路506号', category: 'food', tags: ['샤오룽바오', '미쉐린'], howto: '2·10호선 난징둥루역, 도보 약 5분 (골목 안)', memo: '미쉐린 가이드에 소개된 샤오룽바오 맛집. 웨이팅은 있지만 회전이 빨라요.\n블로그 추천: 게살 샤오룽바오(蟹粉小笼)가 특히 맛있음. 돈까스는 무난.\n현금만 받는다는 정보가 있어요 · 점심에 1시간 쉬는 시간 · 붐비면 합석.', wgs: [31.23626, 121.47699], wish: true }),
+  P('dintaifung', { name: '딘타이펑 (신톈디)', nameZh: '鼎泰丰(新天地店)', addressZh: '上海市黄浦区马当路245号 新天地时尚 2楼', category: 'food', tags: ['딤섬'], howto: '10·13호선 신톈디역', memo: '쇼핑몰 新天地时尚(Xintiandi Style) 2층. 위치는 디엔핑에서 한 번 확인.', wgs: [31.2180, 121.4735] }),
   P('redlips', { name: '레드립스 (마라반)', nameZh: '味爱自助百汇', category: 'food', tags: ['마라', '배달 추천'], memo: '매장도 좋지만 배달 추천! 야식으로, 만두도 같이 시키기.', photo: 'redlips' }),
   P('niunew', { name: '우뉴 스키야키', nameZh: '牛New寿喜烧', category: 'food', tags: ['훠궈'] }),
   P('zhuguangyu', { name: '주광옥 훠궈', nameZh: '朱光玉火锅馆', category: 'food', tags: ['훠궈'] }),
@@ -61,7 +61,7 @@ const RAW_PLACES = [
 
   // ───── 카페 · 디저트 ─────
   P('tanghulu', { name: '탕후루 · 예원 길거리 간식', nameZh: '冰糖葫芦', category: 'cafe', tags: ['디저트·간식'], howto: '예원 · 성황묘 상점가', memo: '길거리에서 많이 보이는데, 노점 말고 매장 같은 곳에서 사 먹어야 해요!', photo: 'tanghulu', wgs: [31.2281, 121.4892], approx: true }),
-  P('lillian', { name: '릴리안 베이커리', nameZh: '莉莲蛋挞', category: 'cafe', tags: ['에그타르트'], memo: '에그타르트 1개 약 1,500원. 종류가 4개라 취향대로.', photo: 'lillian', wgs: [31.23466, 121.46977], wish: true }),
+  P('lillian', { name: '릴리안 베이커리', nameZh: '莉莲蛋挞', addressZh: '上海市静安区南京西路988号 (예: 남경서로점)', category: 'cafe', tags: ['에그타르트', '체인'], howto: '지하철역 안·상가에 지점이 많아요 (쉬자후이역 환승통로 등)', memo: '에그타르트 1개 약 1,500원. 종류가 4개라 취향대로.\n지점이 많아서 가까운 곳으로 가면 돼요.', photo: 'lillian', wgs: [31.23466, 121.46977], approx: true, wish: true }),
   P('holiland', { name: '홀리랜드', nameZh: '好利来', category: 'cafe', tags: ['케이크', '기념품'], memo: '귀여운 케이크부터 유명 디저트까지. 포장이 꼼꼼해 마지막에 사서 한국에 가져가기도 좋아요.', photo: 'holiland', wgs: [31.23925, 121.49570], approx: true }),
   P('heytea', { name: '헤이티', nameZh: '喜茶', category: 'cafe', tags: ['음료'], memo: '1일 1헤이티 필수! 다육포도, 망고 코코넛, 다육포도 코코넛.', photo: 'heytea', wgs: [31.23740, 121.46945], approx: true }),
   P('amashouzuo', { name: '아마수작', nameZh: '阿嬷手作', category: 'cafe', tags: ['음료'], memo: '요즘 많이 뜨는 음료! 웨이팅 길면 위챗으로 주문. 늦게 도착해도 냉장고에 보관해줘서 녹지 않아요.', photo: 'amashouzuo' }),
@@ -73,12 +73,12 @@ const RAW_PLACES = [
   P('alimentari', { name: '알리메타리 (브런치)', nameZh: 'Alimentari', addressZh: '上海市徐汇区安福路168号', category: 'cafe', tags: ['브런치'], wgs: [31.21618, 121.44014] }),
   P('butterful', { name: 'Butterful & Creamorous', category: 'cafe', tags: ['베이커리'], memo: '베이커리 맛집.' }),
   P('loam', { name: 'LOAM', category: 'cafe', tags: ['카페'], memo: '넓고 분위기 좋은 카페.' }),
-  P('fascino', { name: 'FASCINO BAKERY', category: 'cafe', tags: ['디저트'], memo: '디저트 맛집.', wgs: [31.20614, 121.42541] }),
+  P('fascino', { name: 'FASCINO BAKERY · 싱푸리점', nameZh: 'FASCINO(幸福里店)', addressZh: '上海市长宁区番禺路381号 幸福里F座1楼', category: 'cafe', tags: ['디저트', '베이커리'], howto: '10·11호선 교통대학역, 도보 약 10분', memo: '디저트 맛집. 신톈디(太仓路181弄)에도 지점 있어요.', wgs: [31.20614, 121.42541] }),
   P('dq', { name: 'DQ (아이스크림)', category: 'cafe', tags: ['아이스크림', '체인'] }),
 ];
 
 // 이미 들어간 장소를 실제 지점 주소로 고치기 (v3)
-export const PACK_REFRESH = ['pk_henjiu', 'pk_hongkuijia', 'pk_diandude', 'pk_xiehuangmian', 'pk_beijingduck', 'pk_jianbing', 'pk_laila'];
+export const PACK_REFRESH = ['pk_henjiu', 'pk_hongkuijia', 'pk_diandude', 'pk_xiehuangmian', 'pk_beijingduck', 'pk_jianbing', 'pk_laila', 'pk_xiaoyang', 'pk_dintaifung', 'pk_lillian', 'pk_fascino'];
 // 이미 들어간 장소에도 ★ 붙이기 (v2)
 export const PACK_WISH = RAW_PLACES.filter((p) => p.wish).map((p) => p.id);
 

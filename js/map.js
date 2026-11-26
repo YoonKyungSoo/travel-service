@@ -2,7 +2,7 @@
 /* global L */
 import { S, add, update, remove, byId, onChange } from './state.js';
 import { DISTRICTS, DISTRICT_BY_ADCODE, DISTRICT_BY_ID, AIRPORTS, PLACE_CATS, STAY_STATUS, districtName, catSvg } from './data.js';
-import { esc, fmtDate, dateRange, wgs2gcj, parseLatLng, amapUrl, amapNav, amapSearch, googleUrl, toast, distanceKm } from './util.js';
+import { esc, fmtDate, dateRange, wgs2gcj, gcj2wgs, parseLatLng, amapUrl, amapNav, amapSearch, googleUrl, toast, distanceKm } from './util.js';
 import { formModal, field, input, textarea, segmented, select, showDriver, empty } from './ui.js';
 import { dayStops, drawRoute, legsOf, legLinksHtml } from './route.js';
 
@@ -299,6 +299,7 @@ function renderDetail() {
   const item = byId(type === 'place' ? 'places' : 'stays', id);
   if (!item) { view.detail = null; return renderSheet(); }
   const isPlace = type === 'place';
+  fillAddrLater(isPlace ? 'places' : 'stays', item);
   const d = DISTRICT_BY_ID[item.district];
   const cat = PLACE_CATS[item.category] || PLACE_CATS.etc;
   const meta = isPlace
@@ -472,6 +473,25 @@ const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
 const CJK = /[一-鿿]/;
 
 /** OpenStreetMap 검색 (상하이 안에서만). 결과 좌표는 GCJ-02로 변환 */
+/** 좌표 → 중국어 주소 (도로명까지 있을 때만) */
+async function reverseAddr(lat, lng) {
+  const [wl, wn] = gcj2wgs(lat, lng);
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=zh-CN&lat=${wl}&lon=${wn}`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) return '';
+  const a = (await res.json()).address || {};
+  const qu = [a.city_district, a.district, a.suburb, a.county].find((s) => s && /区$/.test(s)) || '';
+  const road = [a.road, a.pedestrian].find((s) => s && CJK.test(s)) || '';
+  if (!road) return '';
+  return `上海市${qu}${road}${a.house_number ? a.house_number.replace(/号$/, '') + '号' : ''}`;
+}
+const addrTried = new Set();
+/** 상세를 열 때 주소가 비어 있으면 한 번 채워두기 (대표 위치는 제외) */
+function fillAddrLater(col, item) {
+  if (item.addressZh || item.approx || !hasLL(item) || addrTried.has(item.id)) return;
+  addrTried.add(item.id);
+  reverseAddr(item.lat, item.lng).then((addr) => { if (addr) update(col, item.id, { addressZh: addr }); }).catch(() => {});
+}
+
 async function searchPlaces(q) {
   const url = `${NOMINATIM}?format=jsonv2&addressdetails=1&namedetails=1&limit=8&bounded=1&viewbox=120.85,31.88,122.0,30.68&accept-language=zh-CN,ko,en&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -715,6 +735,7 @@ export function placeForm(p = null, preset = null) {
       delete v._tags;
       if (hasLL(v) && p?.approx && (v.lat !== p.lat || v.lng !== p.lng)) v.approx = false; // 직접 위치를 고치면 대표 위치 표시 해제
       if (p) v.edited = true; // 수정 화면에서 저장한 장소는 추천 데이터 갱신 때 덮어쓰지 않음
+      if (hasLL(v) && !v.addressZh && !v.approx) v.addressZh = await reverseAddr(v.lat, v.lng).catch(() => '') || undefined; // 좌표만 있으면 주소 자동 입력
       if (p) await update('places', p.id, v);
       else {
         const id = await add('places', { ...v, visited: false });
