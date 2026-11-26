@@ -353,13 +353,13 @@ function bindJoinForm(f) {
 }
 
 function newTripFormHtml() {
-  const regionChips = (c) => regionsOf(c).map((r, i) => `<label><input type="checkbox" name="region" value="${r.id}" ${i === 0 ? 'checked' : ''} /><span>${esc(r.ko)}</span></label>`).join('');
+  const regionChips = (c) => regionsOf(c).map((r, i) => `<label><input type="radio" name="region" value="${r.id}" ${i === 0 ? 'checked' : ''} /><span>${esc(r.ko)}</span></label>`).join('');
   return `<form id="newTrip" class="form card">
     <h2>새 여행 만들기</h2>
     <div class="field"><span class="field-label">나라</span>
       <div class="seg country-seg">${Object.values(COUNTRIES).map((c, i) => `<label><input type="radio" name="country" value="${c.id}" ${i === 0 ? 'checked' : ''} /><span>${c.ko}</span></label>`).join('')}</div>
     </div>
-    <div class="field"><span class="field-label">지역 <small>(여러 곳 가능)</small></span>
+    <div class="field"><span class="field-label">지역</span>
       <div class="seg" data-regions>${regionChips('CN')}</div>
     </div>
     <label class="field"><span class="field-label">여행 이름</span><input name="name" placeholder="비우면 지역 이름으로" autocomplete="off" /></label>
@@ -386,7 +386,7 @@ function bindNewTripForm(f) {
   const regionsBox = f.querySelector('[data-regions]');
   f.addEventListener('change', (e) => {
     if (e.target.name !== 'country') return;
-    regionsBox.innerHTML = regionsOf(e.target.value).map((r, i) => `<label><input type="checkbox" name="region" value="${r.id}" ${i === 0 ? 'checked' : ''} /><span>${esc(r.ko)}</span></label>`).join('');
+    regionsBox.innerHTML = regionsOf(e.target.value).map((r, i) => `<label><input type="radio" name="region" value="${r.id}" ${i === 0 ? 'checked' : ''} /><span>${esc(r.ko)}</span></label>`).join('');
   });
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -395,7 +395,7 @@ function bindNewTripForm(f) {
     const m1 = f.m1.value.trim();
     const others = f.others.value.split(/[,，、]/).map((s) => s.trim()).filter(Boolean);
     const members = [...new Set([m1, ...others])];
-    if (!regions.length) return toast('지역을 하나 이상 고르세요.');
+    if (!regions.length) return toast('지역을 고르세요.');
     if (!m1) return toast('내 이름을 입력하세요.');
     if (!f.startDate.value || !f.endDate.value) return toast('날짜를 입력하세요.');
     if (f.endDate.value < f.startDate.value) return toast('날짜를 확인하세요.');

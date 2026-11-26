@@ -180,7 +180,6 @@ function tripHtml() {
 function tripForm() {
   const t = S.trip;
   const d = dest();
-  const cur = new Set(d.regions.map((r) => r.id));
   formModal({
     title: '여행 수정',
     canDelete: true,
@@ -191,13 +190,13 @@ function tripForm() {
         ${field('도착', input('endDate', t.endDate, 'type="date"'))}
       </div>
       <div class="field"><span class="field-label">지역 (${esc(d.country.ko)})</span>
-        <div class="seg">${regionsOf(d.country.id).map((r) => `<label><input type="checkbox" name="_region" value="${r.id}" ${cur.has(r.id) ? 'checked' : ''} /><span>${esc(r.ko)}</span></label>`).join('')}</div>
+        <div class="seg">${regionsOf(d.country.id).map((r) => `<label><input type="radio" name="_region" value="${r.id}" ${r.id === d.primary.id ? 'checked' : ''} /><span>${esc(r.ko)}</span></label>`).join('')}</div>
       </div>
       ${field('같이 가는 사람', input('_members', (t.members || []).join(', '), 'autocomplete="off"'), '쉼표로 구분. 이름을 지우면 지출·준비물 기록의 그 이름은 그대로 남아요.')}`,
     onSubmit: async (v, form) => {
       const regions = [...form.querySelectorAll('input[name=_region]:checked')].map((i) => i.value).filter((id) => REGION_BY_ID[id]);
       const members = [...new Set(v._members.split(/[,，、]/).map((s) => s.trim()).filter(Boolean))];
-      if (!regions.length) { toast('지역을 하나 이상 고르세요.'); return false; }
+      if (!regions.length) { toast('지역을 고르세요.'); return false; }
       if (!members.length) { toast('사람을 한 명 이상 적어주세요.'); return false; }
       if (!v.startDate || !v.endDate || v.endDate < v.startDate) { toast('날짜를 확인하세요.'); return false; }
       const patch = { name: v.name || t.name, startDate: v.startDate, endDate: v.endDate, members };
