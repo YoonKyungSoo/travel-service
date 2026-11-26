@@ -892,3 +892,4 @@ body.picking #map { cursor: crosshair; }
 }
 a.nav-brand { color: inherit; text-decoration: none; }
 .trip-info .btn-row a.btn { flex: 1 1 100%; }
+.pr-break { break-before: page; page-break-before: always; height: 0; }

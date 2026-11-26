@@ -38,8 +38,7 @@ async function route() {
   if (join) return showJoin(normCode(join[1]));
   const r = parseHash();
   if (!r) {
-    const last = local.get(LAST_KEY);
-    if (last && !/^#\/(new|home)/.test(location.hash)) { location.replace(`#/t/${last}/map`); return; }
+    // 사이트 주소만으로 들어오면 항상 첫 화면 (내 여행 · 초대 코드 참가 · 새 여행). 여행은 목록에서 골라 들어감
     S.key = null;
     return showLanding();
   }
@@ -484,6 +483,17 @@ async function boot() {
   $('shareBtn').addEventListener('click', shareLink);
   $('whoBtn').addEventListener('click', askWho);
   window.addEventListener('hashchange', route);
+  window.addEventListener('trip:deleting', (e) => {
+    const key = e.detail;
+    unsubs.forEach((u) => u());
+    unsubs = [];
+    S.key = null;
+    S.trip = null;
+    forgetTrip(key);
+    closeModal();
+    if (location.hash === '#/home') route();
+    else location.hash = '#/home';
+  });
 
   S.store = await createStore();
   await initMap();

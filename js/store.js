@@ -4,6 +4,7 @@
 // 화면 코드는 어느 쪽이든 같은 함수(watch/add/update/remove)를 씁니다.
 import { firebaseConfig } from './config.js';
 import { newId } from './util.js';
+import { COLLECTIONS } from './state.js';
 
 const FB = 'https://www.gstatic.com/firebasejs/12.0.0';
 
@@ -72,6 +73,20 @@ async function createCloudStore() {
         console.error(e);
         return null;
       }
+    },
+    /** 여행 통째로 삭제 */
+    async deleteTrip(key, joinCode) {
+      await authReady;
+      for (const col of COLLECTIONS) {
+        const snap = await F.getDocs(colRef(key, col));
+        for (let i = 0; i < snap.docs.length; i += 400) {
+          const batch = F.writeBatch(db);
+          snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+          await batch.commit();
+        }
+      }
+      if (joinCode) await F.deleteDoc(inviteRef(joinCode)).catch(() => {});
+      await F.deleteDoc(tripRef(key));
     },
     /** 초대 코드로 참가: 내 기기를 멤버로 등록 (+ 새 이름이면 이름도 추가) */
     async joinTrip(key, code, name) {
@@ -174,6 +189,10 @@ function createLocalStore() {
     uid: () => 'local',
     getTrip: async (key) => read(k(key), null),
     lookupInvite: async () => null,
+    async deleteTrip(key) {
+      for (const col of COLLECTIONS) { try { localStorage.removeItem(k(key, col)); } catch { /* 무시 */ } }
+      try { localStorage.removeItem(k(key)); } catch { /* 무시 */ }
+    },
     joinTrip: async () => {},
     setInvite: async (key, code) => write(k(key), { ...read(k(key), {}), joinCode: code }),
     watchTrip(key, cb) {

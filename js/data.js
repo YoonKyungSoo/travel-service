@@ -22,10 +22,13 @@ export const DISTRICTS = [
 export const DISTRICT_BY_ID = Object.fromEntries(DISTRICTS.map((d) => [d.id, d]));
 export const DISTRICT_BY_ADCODE = Object.fromEntries(DISTRICTS.map((d) => [d.adcode, d]));
 /** 상하이는 구 id(huangpu…), 다른 지역은 주소에서 읽은 구 이름(渋谷区…)을 그대로 씀 */
-export const districtName = (id) => DISTRICT_BY_ID[id]?.ko || id || '구 미지정';
+/** 지금 지도에 불러온 구 경계의 구 정보 (id → { ko, name, color, small }). map.js가 채움 */
+export const GEO_META = new Map();
+export const districtName = (id) => DISTRICT_BY_ID[id]?.ko || GEO_META.get(id)?.ko || id || '구 미지정';
 const PALETTE = ['#c8453c', '#3f73a8', '#3f8a5c', '#d7832a', '#8a63b8', '#b84a8a', '#2f9a9a', '#6f8f2e', '#5a6fc0', '#b8962e', '#4a8ab8', '#a85a3a'];
 export function districtColor(id) {
   if (DISTRICT_BY_ID[id]) return DISTRICT_BY_ID[id].color;
+  if (GEO_META.get(id)?.color) return GEO_META.get(id).color;
   let h = 0;
   for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];

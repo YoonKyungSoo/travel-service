@@ -183,6 +183,7 @@ function tripForm() {
   const cur = new Set(d.regions.map((r) => r.id));
   formModal({
     title: '여행 수정',
+    canDelete: true,
     fields: `
       ${field('여행 이름', input('name', t.name, 'autocomplete="off"'))}
       <div class="grid2">
@@ -205,6 +206,19 @@ function tripForm() {
       patch.regions = regions;
       await S.store.updateTrip(S.key, patch);
       toast('저장했어요.');
+    },
+    onDelete: async () => {
+      if (!confirm(`"${t.name}"의 모든 데이터(장소·일정·숙소·준비물·지출·회화·참고 사이트)가 다 지워집니다.\n같이 쓰는 사람에게서도 사라지고 되돌릴 수 없어요.\n\n그래도 삭제하시겠습니까?`)) return;
+      const key = S.key;
+      // 화면이 지워지는 여행을 계속 보고 있지 않게 먼저 닫음 (app.js가 처리)
+      window.dispatchEvent(new CustomEvent('trip:deleting', { detail: key }));
+      try {
+        await S.store.deleteTrip(key, t.joinCode);
+        toast('여행을 삭제했어요.');
+      } catch (err) {
+        console.error(err);
+        toast('삭제하지 못했어요. 인터넷 연결을 확인하세요.');
+      }
     },
   });
 }

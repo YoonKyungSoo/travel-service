@@ -13,15 +13,18 @@ export function exportMenu(kind) {
     <div class="export-list">
       <button type="button" class="btn big ${kind === 'schedule' ? 'primary' : ''}" data-x="schedule">일정표 PDF<small>날짜별 일정 · 장소 주소 · 교통편 · 숙소</small></button>
       <button type="button" class="btn big ${kind === 'expense' ? 'primary' : ''}" data-x="expense">지출 내역서 PDF<small>내역 · 분류별 · 사람별 부담 · 정산</small></button>
+      <button type="button" class="btn big" data-x="both">일정표 + 지출 내역서 한 번에<small>PDF 한 파일 · 일정표 다음 페이지부터 지출 내역서</small></button>
       <button type="button" class="btn big" data-x="csv">지출 엑셀 (CSV)<small>엑셀·구글 시트에서 열기</small></button>
     </div>
-    <p class="hint">PDF: 인쇄 창이 뜨면 대상을 <b>PDF로 저장</b>으로 고르세요. 휴대폰은 공유 → 인쇄 → (두 손가락으로 확대) → 공유에서 PDF 저장.</p>`, (el) => {
+    <p class="hint">PDF: 인쇄 창이 뜨면 대상을 <b>PDF로 저장</b>으로 고르세요. 아이폰은 인쇄 옵션 화면에서 공유 → 파일에 저장.</p>`, (el) => {
     el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-x]');
       if (!b) return;
       closeModal();
-      if (b.dataset.x === 'csv') downloadCsv();
-      else setTimeout(() => printHtml(b.dataset.x === 'schedule' ? scheduleDoc() : expenseDoc()), 150);
+      const x = b.dataset.x;
+      if (x === 'csv') return downloadCsv();
+      const html = x === 'schedule' ? scheduleDoc() : x === 'expense' ? expenseDoc() : `${scheduleDoc()}<div class="pr-break"></div>${expenseDoc()}`;
+      setTimeout(() => printHtml(html), 150);
     });
   });
 }

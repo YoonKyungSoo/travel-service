@@ -9,7 +9,7 @@ export const COUNTRIES = {
     currency: { code: 'CNY', sym: '¥', ko: '위안', unit: 1 },
     tz: 8, gcj: true, nav: 'amap',
     driverAsk: '师傅，请带我去这里',
-    tiles: { url: 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', subdomains: '1234', attribution: '© 高德地图' },
+    tiles: { url: 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', subdomains: '1234', attribution: '© 高德地图 · 行政区域: DataV.GeoAtlas' },
     searchLang: 'zh-CN,ko,en',
     searchHint: '한글보다 중국어·영어로 검색하면 잘 나와요.',
     info: [
@@ -37,7 +37,7 @@ export const COUNTRIES = {
     tz: 9, gcj: false, nav: 'google',
     driverAsk: 'ここまでお願いします',
     // 일본 국토지리원 지도 (무료·키 필요 없음, 일본어 지명). 확대 18까지
-    tiles: { url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', subdomains: '', attribution: '© 国土地理院' },
+    tiles: { url: 'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', subdomains: '', attribution: '© 国土地理院 · 行政区域: 国土数値情報(国土交通省)を加工' },
     searchLang: 'ja,ko,en',
     searchHint: '일본어·영어로 검색하면 잘 나와요. (예: 浅草寺, Sensoji)',
     info: [
@@ -107,6 +107,8 @@ export const REGIONS = [
   { id: 'nagoya', country: 'JP', ko: '나고야', local: '名古屋', center: [35.1815, 136.9066], bbox: [34.8, 136.6, 35.35, 137.15],
     airports: [A('NGO', '주부 공항', '中部国際空港', 34.8584, 136.8054)] },
 ];
+// 모든 지역에 구 경계 데이터 (tools/build-geo.mjs로 만든 파일). 상하이는 원래 파일 그대로
+REGIONS.forEach((r) => { r.geo ||= `data/geo/${r.id}.geojson`; });
 export const REGION_BY_ID = Object.fromEntries(REGIONS.map((r) => [r.id, r]));
 export const regionsOf = (country) => REGIONS.filter((r) => r.country === country);
 

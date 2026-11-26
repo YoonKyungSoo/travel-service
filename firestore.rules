@@ -34,7 +34,8 @@ service cloud.firestore {
             && request.resource.data.members.size() <= 20
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uids', 'members', 'joinTry']))
       );
-      allow delete: if false;
+      // 여행 삭제: 멤버만 (하위 데이터를 먼저 지운 뒤 마지막에 여행 문서)
+      allow delete: if signedIn() && isMember(resource.data);
 
       match /{col}/{docId} {
         function allowedCol() {

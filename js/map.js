@@ -1,7 +1,7 @@
 // 지도 화면: 구 경계(축소) / 거리 지도(확대) + 장소 핀(묶음) + 날짜별 동선 + 하단 시트(목록/동선/상세)
 /* global L */
 import { S, add, update, remove, byId, onChange } from './state.js';
-import { DISTRICTS, DISTRICT_BY_ADCODE, DISTRICT_BY_ID, PLACE_CATS, STAY_STATUS, districtName, districtColor, catSvg } from './data.js';
+import { DISTRICT_BY_ADCODE, PLACE_CATS, STAY_STATUS, GEO_META, districtName, districtColor, catSvg } from './data.js';
 import { esc, fmtDate, dateRange, parseLatLng, toast, distanceKm } from './util.js';
 import { dest, navButtonsHtml, L10N } from './dest.js';
 import { formModal, field, input, textarea, segmented, select, showDriver, empty } from './ui.js';
@@ -13,7 +13,8 @@ let map, geo, geoOutline, geoLabels, tileLayer, placeLayer, stayLayer, routeLaye
 let curDest = null, destKey = ''; // 지금 지도가 맞춰진 목적지
 let geoData = null;
 let tileForced = false;
-const featureLayers = new Map(); // adcode -> layer
+const featureLayers = new Map(); // 구 id -> layer
+const PALETTE = ['#c8453c', '#3f73a8', '#3f8a5c', '#d7832a', '#8a63b8', '#b84a8a', '#2f9a9a', '#6f8f2e', '#5a6fc0', '#b8962e', '#4a8ab8', '#a85a3a', '#7a5ab0', '#4a9a6e', '#9a6a4b', '#c06a6a'];
 
 // 화면 상태
 const view = { district: 'all', cat: 'all', fav: false, q: '', detail: null, day: 'all' }; // detail: {type:'place'|'stay', id}
@@ -41,7 +42,7 @@ function districtCounts() {
 }
 
 function styleDistrict(feature) {
-  const d = DISTRICT_BY_ADCODE[feature.properties.adcode];
+  const d = { id: feature.properties._id, color: districtColor(feature.properties._id) };
   const has = (districtCounts()[d?.id] || 0) > 0;
   const base = cssVar('--map-land') || '#e4e4e0';
   const selected = view.district === d?.id;
@@ -356,7 +357,7 @@ function selectDistrict(id, toggle = false) {
   refreshDistrictStyles();
   renderSheet();
   if (id !== 'all') {
-    const layer = featureLayers.get(DISTRICT_BY_ID[id]?.adcode);
+    const layer = featureLayers.get(id);
     const pts = S.data.places.filter((p) => p.district === id && hasLL(p));
     const b = pts.length ? L.latLngBounds(pts.map((p) => [p.lat, p.lng])) : layer?.getBounds();
     if (b) map.flyToBounds(b, { ...fitPad(), maxZoom: 16, duration: 0.6 });
@@ -530,7 +531,7 @@ async function searchPlaces(q) {
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(res.status);
   const seen = new Set();
-  const onlyGeo = d.regions.every((r) => r.geo); // 상하이만 가는 여행이면 상하이 구 안의 결과만
+  const onlyGeo = d.regions.length === 1 && d.isShanghai; // 상하이만 가는 여행이면 상하이 구 안의 결과만 (쑤저우 등 제외)
   const nameKey = d.country.id === 'JP' ? 'name:ja' : 'name:zh';
   return (await res.json()).map((r) => {
     const [lat, lng] = d.toMap(+r.lat, +r.lon);
@@ -733,14 +734,14 @@ export function detectDistrict(lat, lng) {
     const g = f.geometry;
     const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
     if (polys.some((p) => inRing(lng, lat, p[0]) && !p.slice(1).some((h) => inRing(lng, lat, h)))) {
-      return DISTRICT_BY_ADCODE[f.properties.adcode]?.id;
+      return f.properties._id;
     }
   }
   return undefined;
 }
 
 export function districtOptions() {
-  if (geo) return { '': '자동 (위치로 판별)', ...Object.fromEntries(DISTRICTS.map((d) => [d.id, d.ko])) };
+  if (geo) return { '': '자동 (위치로 판별)', ...Object.fromEntries([...GEO_META].map(([id, m]) => [id, m.ko])) };
   // 구 경계가 없는 지역: 지금까지 나온 구 이름들
   const names = [...new Set([...S.data.places, ...S.data.stays].map((x) => x.district).filter(Boolean))].sort();
   return { '': '자동 (주소로 판별)', ...Object.fromEntries(names.map((n) => [n, n])) };
@@ -812,7 +813,7 @@ function fitCore(animate) {
 function fitAll(animate) {
   map.invalidateSize();
   const opts = isDesktop() ? { padding: [24, 24] } : { paddingTopLeft: [12, 110], paddingBottomRight: [60, 150] };
-  const b = curDest?.mapBounds || [[30.68, 120.85], [31.88, 122.0]];
+  const b = geo ? geo.getBounds() : curDest?.mapBounds || [[30.68, 120.85], [31.88, 122.0]];
   animate ? map.flyToBounds(b, { ...opts, duration: 0.6 }) : map.fitBounds(b, opts);
 }
 
@@ -840,26 +841,39 @@ export async function applyDest() {
   geo = geoOutline = geoLabels = null;
   geoData = null;
   featureLayers.clear();
-  const geoRegion = d.regions.find((r) => r.geo);
-  if (geoRegion) {
-    try {
-      geoData = await (await fetch(geoRegion.geo)).json();
-    } catch (err) {
-      console.error(err);
-      toast('구 경계 데이터를 불러오지 못했어요.');
-    }
+  GEO_META.clear();
+  // 여행 지역들의 구 경계를 모두 불러와 하나로 합침 (도쿄+오사카 등)
+  const files = await Promise.all(d.regions.filter((r) => r.geo).map((r) => fetch(r.geo).then((res) => res.json()).catch((err) => { console.error(err); return null; })));
+  if (files.some((f) => !f)) toast('구 경계 데이터를 일부 불러오지 못했어요.');
+  const features = files.filter(Boolean).flatMap((f) => f.features);
+  if (features.length) {
+    // 구 id: 상하이는 예전 id(huangpu…) 유지, 나머지는 행정 코드
+    features.forEach((f, i) => {
+      const p = f.properties;
+      const legacy = DISTRICT_BY_ADCODE[p.adcode];
+      const id = legacy?.id || String(p.code ?? p.adcode);
+      p._id = id;
+      if (!p.centroid) p.centroid = p.center;
+      const [w, s, e, n] = L.geoJSON(f).getBounds().toBBoxString().split(',').map(Number);
+      GEO_META.set(id, {
+        ko: legacy?.ko || p.ko || p.name,
+        name: p.name,
+        color: legacy?.color || PALETTE[i % PALETTE.length],
+        small: legacy ? !!legacy.small : Math.max(e - w, n - s) < 0.07, // 작은 구는 확대했을 때만 이름 표시
+      });
+    });
+    geoData = { type: 'FeatureCollection', features };
   }
   if (geoData && key === destKey) {
     geoOutline = L.geoJSON(geoData, { style: { color: cssVar('--map-edge') || '#ff4f3f', weight: 3, fill: false }, interactive: false }).addTo(map);
     geo = L.geoJSON(geoData, {
       style: styleDistrict,
       onEachFeature: (f, layer) => {
-        featureLayers.set(f.properties.adcode, layer);
+        featureLayers.set(f.properties._id, layer);
         layer.on('click', (ev) => {
           if (pickResolve || streetOn()) return; // 거리 지도에서는 구 클릭 무시
           L.DomEvent.stopPropagation(ev);
-          const dd = DISTRICT_BY_ADCODE[f.properties.adcode];
-          if (dd) selectDistrict(dd.id, true);
+          selectDistrict(f.properties._id, true);
         });
       },
     }).addTo(map);
@@ -868,8 +882,8 @@ export async function applyDest() {
     // 구 이름 라벨 (축소 상태에서만)
     geoLabels = L.layerGroup().addTo(map);
     for (const f of geoData.features) {
-      const dd = DISTRICT_BY_ADCODE[f.properties.adcode];
-      const c = f.properties.centroid || f.properties.center;
+      const dd = GEO_META.get(f.properties._id);
+      const c = f.properties.centroid;
       if (!dd || !c) continue;
       L.marker([c[1], c[0]], {
         interactive: false,
@@ -967,8 +981,20 @@ export async function initMap() {
 
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshDistrictStyles);
 
+  // 구 경계가 생기기 전에 주소로 구를 정해 둔 장소·숙소 → 경계 기준 구로 한 번 맞춰 주기
+  const fixed = new Set();
+  const fixDistricts = (col) => {
+    if (!geo) return;
+    for (const x of S.data[col]) {
+      if (!hasLL(x) || fixed.has(x.id) || GEO_META.has(x.district)) continue;
+      fixed.add(x.id);
+      const id = detectDistrict(x.lat, x.lng);
+      if (id && id !== x.district) update(col, x.id, { district: id });
+    }
+  };
   onChange((what) => {
     if (what === 'trip' || what === 'all') applyDest(); // 목적지가 바뀌었을 때만 실제로 다시 그림
+    if (what === 'places' || what === 'stays') fixDistricts(what);
     if (['places', 'stays', 'schedule', 'transports', 'all', 'trip'].includes(what)) {
       if (what === 'trip' || what === 'all') renderDayBar();
       refreshDistrictStyles();
@@ -989,11 +1015,15 @@ const mapEl = document.getElementById('view-map');
 let fitted = false;
 export function showMap() {
   if (!map) return;
-  setTimeout(() => {
-    map.invalidateSize();
-    // 숨겨진 상태로 만들어졌으면 크기가 0이라 처음 보일 때 다시 맞춤
-    if (!fitted) { fitted = S.data.places.some(hasLL); fitted ? fitCore(false) : fitAll(false); }
-  }, 0);
+  // 숨겨진 상태로 만들어졌으면 크기가 0이라 처음 보일 때 다시 맞춤.
+  // 화면 배치가 끝나기 전에 맞추면 어긋나므로, 조금 뒤 한 번 더 맞춤 (그 사이 사용자가 움직였으면 그대로 둠)
+  const first = !fitted;
+  let moved = false;
+  const onMove = () => { moved = true; };
+  map.once('dragstart zoomstart', onMove);
+  const fit = () => { fitted = true; S.data.places.some(hasLL) ? fitCore(false) : fitAll(false); };
+  setTimeout(() => { map.invalidateSize(); if (first) fit(); moved = false; }, 0);
+  setTimeout(() => { map.off('dragstart zoomstart', onMove); map.invalidateSize(); if (first && !moved) fit(); }, 400);
 }
 
 /** 다른 화면에서 지도의 특정 장소로 이동 (day를 주면 그날 동선 모드로) */
