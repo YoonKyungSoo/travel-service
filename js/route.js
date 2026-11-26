@@ -1,8 +1,8 @@
 // 날짜별 동선: 일정(장소 연결) → 번호 핀 + 휘어진 화살표 선 + 구간 거리/시간
 /* global L */
 import { S, byId } from './state.js';
-import { airportFor } from './data.js';
-import { esc, legInfo, byTime, amapNav, googleDir } from './util.js';
+import { airportFor, navLinksHtml } from './dest.js';
+import { esc, legInfo, byTime } from './util.js';
 
 const flights = () => S.data.transports.filter((t) => t.type === 'flight').sort(byTime);
 const confirmedStays = () => S.data.stays.filter((s) => s.status === 'confirmed' && typeof s.lat === 'number');
@@ -70,8 +70,7 @@ function stopIcon(st) {
 }
 
 export function legLinksHtml(leg) {
-  return `<a class="mini" href="${amapNav(leg.b, leg.a, leg.walk ? 'walk' : 'bus')}" target="_blank" rel="noopener">고덕</a>
-    <a class="mini" href="${googleDir(leg.a, leg.b, leg.walk ? 'walking' : 'transit')}" target="_blank" rel="noopener">구글</a>`;
+  return navLinksHtml(leg.a, leg.b);
 }
 
 /** 지도에 그리기. onStop(stop) 클릭 콜백 */
@@ -84,15 +83,15 @@ export function drawRoute(layer, stops, onStop) {
     L.polyline(pts, { className: 'route-casing', interactive: false }).addTo(layer);
     L.polyline(pts, { className: 'route-line', interactive: false }).addTo(layer);
     L.polyline(pts, { className: 'route-flow', interactive: false }).addTo(layer);
-    // 화살표 + 거리 라벨 (누르면 길찾기)
+    // 화살표 (누르면 길찾기)
     L.marker(mid, {
       zIndexOffset: 400,
       icon: L.divIcon({
         className: 'leg-wrap',
         iconSize: [0, 0],
-        html: `<div class="leg"><i style="transform:rotate(${deg}deg)"><svg viewBox="0 0 12 12"><path d="M2 2 10 6 2 10 4 6z"/></svg></i><span>${esc(leg.label)}</span></div>`,
+        html: `<div class="leg"><i style="transform:rotate(${deg}deg)"><svg viewBox="0 0 12 12"><path d="M2 2 10 6 2 10 4 6z"/></svg></i></div>`,
       }),
-    }).bindPopup(`<div class="leg-pop"><b>${esc(leg.a.name)} → ${esc(leg.b.name)}</b><small>${esc(leg.label)} (직선 기준 대략)</small><div>${legLinksHtml(leg)}</div></div>`, { closeButton: false, offset: [0, -6] })
+    }).bindPopup(`<div class="leg-pop"><b>${esc(leg.a.name)} → ${esc(leg.b.name)}</b><small>길찾기로 이동 방법·시간 확인</small><div>${legLinksHtml(leg)}</div></div>`, { closeButton: false, offset: [0, -6] })
       .addTo(layer);
   });
   stops.forEach((st) => {

@@ -18,11 +18,13 @@ async function createCloudStore() {
     import(`${FB}/firebase-auth.js`),
     import(`${FB}/firebase-firestore.js`),
   ]);
-  const app = initializeApp(firebaseConfig);
+  // 로컬 테스트 전용: localhost?emu 로 열면 실제 DB 대신 에뮬레이터(가짜 서버)에 연결
+  const EMU = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && /[?&]emu\b/.test(location.search);
+  const app = initializeApp(EMU ? { ...firebaseConfig, projectId: 'demo-travel' } : firebaseConfig);
   let db;
   try {
     db = F.initializeFirestore(app, {
-      localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }),
+      localCache: EMU ? F.memoryLocalCache() : F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }),
     });
   } catch {
     db = F.getFirestore(app); // 사파리 사생활 보호 모드 등 캐시 불가 환경
@@ -30,12 +32,14 @@ async function createCloudStore() {
 
   // 익명 로그인 (화면에 보이지 않음). 보안 규칙에서 "로그인한 요청만" 허용하기 위함
   const auth = A.getAuth(app);
+  if (EMU) { A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true }); F.connectFirestoreEmulator(db, '127.0.0.1', 8080); }
   const authReady = new Promise((resolve) => {
     const off = A.onAuthStateChanged(auth, (u) => { if (u) { off(); resolve(); } });
     A.signInAnonymously(auth).catch((e) => console.warn('익명 로그인 실패(오프라인일 수 있음)', e));
   });
 
   const tripRef = (key) => F.doc(db, 'trips', key);
+  const inviteRef = (code) => F.doc(db, 'invites', code);
   const colRef = (key, col) => F.collection(db, 'trips', key, col);
   const docRef = (key, col, id) => F.doc(db, 'trips', key, col, id);
 
@@ -45,27 +49,61 @@ async function createCloudStore() {
   return {
     mode: 'cloud',
     ready: () => authReady,
+    uid: () => auth.currentUser?.uid,
+    /** 여행 읽기. 멤버가 아니면 { denied: true } */
     async getTrip(key) {
       await authReady;
       try {
         const s = await F.getDoc(tripRef(key));
         return s.exists() ? s.data() : null;
       } catch (e) {
+        if (e.code === 'permission-denied') return { denied: true };
         console.error(e);
         return null;
       }
     },
-    watchTrip(key, cb) {
+    /** 초대 코드 → 여행 키 (없으면 null) */
+    async lookupInvite(code) {
+      await authReady;
+      try {
+        const s = await F.getDoc(inviteRef(code));
+        return s.exists() ? s.data().trip : null;
+      } catch (e) {
+        console.error(e);
+        return null;
+      }
+    },
+    /** 초대 코드로 참가: 내 기기를 멤버로 등록 (+ 새 이름이면 이름도 추가) */
+    async joinTrip(key, code, name) {
+      await authReady;
+      const patch = { uids: F.arrayUnion(auth.currentUser.uid), joinTry: code };
+      if (name) patch.members = F.arrayUnion(name);
+      await F.updateDoc(tripRef(key), patch);
+    },
+    /** 초대 코드 새로 만들기 (예전 코드는 지움). 예전 여행이면 이때 멤버 방식으로 전환 */
+    async setInvite(key, code, oldCode, convert) {
+      await authReady;
+      const batch = F.writeBatch(db);
+      const patch = { joinCode: code };
+      if (convert) Object.assign(patch, { uids: [auth.currentUser.uid], ownerUid: auth.currentUser.uid });
+      batch.update(tripRef(key), patch);
+      batch.set(inviteRef(code), { trip: key, createdAt: Date.now() });
+      if (oldCode && oldCode !== code) batch.delete(inviteRef(oldCode));
+      await batch.commit();
+    },
+    watchTrip(key, cb, onDenied) {
       let off = () => {}, alive = true;
       authReady.then(() => {
-        if (alive) off = F.onSnapshot(tripRef(key), (s) => cb(s.exists() ? s.data() : null), (e) => { console.error(e); cb(null); });
+        if (alive) off = F.onSnapshot(tripRef(key), (s) => cb(s.exists() ? s.data() : null), (e) => { if (e.code === 'permission-denied') onDenied?.(); else console.error(e); cb(null); });
       });
       return () => { alive = false; off(); };
     },
     async createTrip(key, trip, seed) {
       await authReady;
       const batch = F.writeBatch(db);
-      batch.set(tripRef(key), clean({ ...trip, createdAt: Date.now() }));
+      const uid = auth.currentUser.uid;
+      batch.set(tripRef(key), clean({ ...trip, uids: [uid], ownerUid: uid, createdAt: Date.now() }));
+      if (trip.joinCode) batch.set(inviteRef(trip.joinCode), { trip: key, createdAt: Date.now() });
       for (const [col, items] of Object.entries(seed || {})) {
         for (const it of items) batch.set(docRef(key, col, newId(12)), clean({ ...it, createdAt: Date.now() }));
       }
@@ -75,10 +113,10 @@ async function createCloudStore() {
       await authReady;
       fire(F.updateDoc(tripRef(key), clean(patch)));
     },
-    watch(key, col, cb) {
+    watch(key, col, cb, onDenied) {
       let off = () => {}, alive = true;
       authReady.then(() => {
-        if (alive) off = F.onSnapshot(colRef(key, col), (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))), (e) => console.error(col, e));
+        if (alive) off = F.onSnapshot(colRef(key, col), (snap) => cb(snap.docs.map((d) => ({ ...d.data(), id: d.id }))), (e) => { if (e.code === 'permission-denied') onDenied?.(); else console.error(col, e); });
       });
       return () => { alive = false; off(); };
     },
@@ -133,7 +171,11 @@ function createLocalStore() {
   return {
     mode: 'local',
     ready: async () => {},
+    uid: () => 'local',
     getTrip: async (key) => read(k(key), null),
+    lookupInvite: async () => null,
+    joinTrip: async () => {},
+    setInvite: async (key, code) => write(k(key), { ...read(k(key), {}), joinCode: code }),
     watchTrip(key, cb) {
       const fire = () => cb(read(k(key), null));
       fire();

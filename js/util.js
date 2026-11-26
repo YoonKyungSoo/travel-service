@@ -93,7 +93,7 @@ export function gcj2wgs(lat, lng) {
   const [gl, gn] = wgs2gcj(lat, lng);
   return [lat - (gl - lat), lng - (gn - lng)];
 }
-/** "31.2304, 121.4737" → [lat, lng]. 순서가 반대여도 처리. 상하이 주변이 아니면 null */
+/** "31.2304, 121.4737" → [lat, lng]. 순서가 반대여도 처리. 동아시아 범위가 아니면 null */
 export function parseLatLng(text) {
   const s = String(text);
   // 구글맵 링크: 장소 핀 좌표(!3d위도!4d경도)가 가장 정확, 없으면 화면 중심(@위도,경도)
@@ -107,7 +107,7 @@ export function parseLatLng(text) {
   if (!nums || nums.length < 2) return null;
   let [a, b] = nums;
   if (a > 90) [a, b] = [b, a];
-  if (a < 20 || a > 40 || b < 110 || b > 130) return null;
+  if (a < 15 || a > 50 || b < 95 || b > 150) return null;
   return [a, b];
 }
 /** 직선거리 km */
@@ -117,17 +117,12 @@ export function distanceKm(a, b) {
   const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(s));
 }
-/** 디디/택시 대략 소요시간(분): 도로 우회 1.3배, 평균 40km/h, 호출 대기 10분 */
-export const estimateDriveMin = (km) => Math.round(((km * 1.3) / 40) * 60 + 10);
 /** 고덕 지도(중국에서 가장 정확)로 열기 */
 export const amapUrl = (lat, lng, name) =>
   `https://uri.amap.com/marker?position=${lng},${lat}&name=${encodeURIComponent(name || '')}&coordinate=gaode&callnative=1`;
-/** 장소 이동 시간: 1.2km 이하는 도보, 그 이상은 택시(디디) */
+/** 구간 정보 (같은 자리인지 판단용 직선거리만. 화면엔 거리·시간을 표시하지 않음) */
 export function legInfo(a, b) {
-  const km = distanceKm(a, b);
-  const walk = km <= 1.2;
-  const min = walk ? Math.max(1, Math.round(((km * 1.3) / 4.5) * 60)) : estimateDriveMin(km);
-  return { km, min, walk, label: `${km < 1 ? Math.round(km * 1000) + 'm' : km.toFixed(1) + 'km'} · ${walk ? '도보' : '택시'} ${min}분` };
+  return { km: distanceKm(a, b) };
 }
 const amapPt = (p) => `${p.lng},${p.lat},${encodeURIComponent(p.nameZh || p.name || '')}`;
 /** 고덕 길찾기. from이 없으면 현재 위치에서 출발. mode: car | bus(대중교통) | walk */

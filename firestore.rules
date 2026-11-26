@@ -1,34 +1,64 @@
 rules_version = '2';
 
-// 상하이 여행 사이트 보안 규칙
-// · 로그인 화면 없음: 사이트가 자동으로 "익명 로그인"을 하고, 링크 속 여행 키를 아는 사람만 접근
-// · 여행 목록 조회(list)는 막혀 있어서 키를 모르면 다른 여행을 찾을 수 없음
+// 여행 사이트 보안 규칙 (초대 코드 방식)
+// · 로그인 화면 없음: 사이트가 자동으로 "익명 로그인"을 하고, 기기마다 고유 번호(uid)가 생김
+// · 여행에 등록된 기기(uids)만 읽고 쓸 수 있음. 새 기기는 초대 코드를 입력해야 등록됨
+// · 예전 여행(uids 없음)은 전환 전까지 링크만으로 접근 가능 → 초대 코드를 만들면 그때부터 잠김
+// · 여행 목록 조회(list)는 막혀 있어서 다른 여행을 찾을 수 없음
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
     function validKey(key) { return key.size() >= 16 && key.size() <= 40; }
     function smallDoc() { return request.resource.data.size() <= 40; }
+    function tripPath(key) { return /databases/$(database)/documents/trips/$(key); }
+    function isLegacy(t) { return !('uids' in t); }
+    function isMember(t) { return isLegacy(t) || request.auth.uid in t.uids; }
 
     match /trips/{tripKey} {
-      allow get: if signedIn() && validKey(tripKey);
+      // 없는 여행이면 "없음"을 알려주기 위해 읽기 허용 (내용이 없으니 노출될 것도 없음)
+      allow get: if signedIn() && validKey(tripKey) && (resource == null || isMember(resource.data));
       allow list: if false;
       allow create: if signedIn() && validKey(tripKey) && smallDoc()
                     && request.resource.data.members is list
-                    && request.resource.data.members.size() <= 10;
-      allow update: if signedIn() && smallDoc();
+                    && request.resource.data.members.size() <= 20
+                    && request.resource.data.uids == [request.auth.uid];
+      allow update: if signedIn() && smallDoc() && (
+        // 멤버는 자유롭게 수정 (멤버 목록 uids를 비우는 것만 막음)
+        (isMember(resource.data) && (isLegacy(resource.data) || request.resource.data.uids.size() > 0))
+        // 초대 코드로 참가: 내 기기 번호만 추가 (+ 내 이름 추가)
+        || (!isLegacy(resource.data)
+            && resource.data.joinCode is string
+            && request.resource.data.joinTry == resource.data.joinCode
+            && request.resource.data.uids == resource.data.uids.concat([request.auth.uid])
+            && request.resource.data.members.size() <= 20
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uids', 'members', 'joinTry']))
+      );
       allow delete: if false;
 
       match /{col}/{docId} {
         function allowedCol() {
-          return col in ['places', 'stays', 'transports', 'schedule', 'checklist', 'expenses', 'links'];
+          return col in ['places', 'stays', 'transports', 'schedule', 'checklist', 'expenses', 'links', 'phrases'];
         }
-        allow read: if signedIn() && allowedCol()
-                    && exists(/databases/$(database)/documents/trips/$(tripKey));
+        allow read: if signedIn() && allowedCol() && exists(tripPath(tripKey)) && isMember(get(tripPath(tripKey)).data);
+        // 여행 만들기와 같은 묶음(batch)으로 쓰는 경우를 위해 getAfter 사용
         allow create, update: if signedIn() && allowedCol() && smallDoc()
-                    && existsAfter(/databases/$(database)/documents/trips/$(tripKey));
-        allow delete: if signedIn() && allowedCol();
+                    && existsAfter(tripPath(tripKey)) && isMember(getAfter(tripPath(tripKey)).data);
+        allow delete: if signedIn() && allowedCol() && exists(tripPath(tripKey)) && isMember(get(tripPath(tripKey)).data);
       }
+    }
+
+    // 초대 코드 → 여행 키. 코드를 아는 사람만 하나씩 조회 가능 (목록 조회 불가)
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && code.size() >= 6 && code.size() <= 12
+                    && request.resource.data.keys().hasOnly(['trip', 'createdAt'])
+                    && existsAfter(tripPath(request.resource.data.trip))
+                    && request.auth.uid in getAfter(tripPath(request.resource.data.trip)).data.uids;
+      allow delete: if signedIn() && exists(tripPath(resource.data.trip))
+                    && request.auth.uid in get(tripPath(resource.data.trip)).data.uids;
+      allow update: if false;
     }
   }
 }

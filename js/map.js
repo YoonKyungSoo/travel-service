@@ -1,16 +1,16 @@
 // 지도 화면: 구 경계(축소) / 거리 지도(확대) + 장소 핀(묶음) + 날짜별 동선 + 하단 시트(목록/동선/상세)
 /* global L */
 import { S, add, update, remove, byId, onChange } from './state.js';
-import { DISTRICTS, DISTRICT_BY_ADCODE, DISTRICT_BY_ID, AIRPORTS, PLACE_CATS, STAY_STATUS, districtName, catSvg } from './data.js';
-import { esc, fmtDate, dateRange, wgs2gcj, gcj2wgs, parseLatLng, amapUrl, amapNav, amapSearch, googleUrl, toast, distanceKm } from './util.js';
+import { DISTRICTS, DISTRICT_BY_ADCODE, DISTRICT_BY_ID, PLACE_CATS, STAY_STATUS, districtName, districtColor, catSvg } from './data.js';
+import { esc, fmtDate, dateRange, parseLatLng, toast, distanceKm } from './util.js';
+import { dest, navButtonsHtml, L10N } from './dest.js';
 import { formModal, field, input, textarea, segmented, select, showDriver, empty } from './ui.js';
 import { dayStops, drawRoute, legsOf, legLinksHtml } from './route.js';
 
-const TILE_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
-const SH_BOUNDS = [[30.68, 120.85], [31.88, 122.0]];
 const STREET_ZOOM = 12; // 이 배율 이상이면 거리 지도 자동 표시
 
-let map, geo, geoOutline, tileLayer, placeLayer, stayLayer, routeLayer, myLoc;
+let map, geo, geoOutline, geoLabels, tileLayer, placeLayer, stayLayer, routeLayer, airportLayer, myLoc;
+let curDest = null, destKey = ''; // 지금 지도가 맞춰진 목적지
 let geoData = null;
 let tileForced = false;
 const featureLayers = new Map(); // adcode -> layer
@@ -65,7 +65,8 @@ function refreshDistrictStyles() {
 
 /** 확대 배율에 따라 거리 지도 자동 켜기/끄기 */
 function syncStreet() {
-  const want = tileForced || map.getZoom() >= STREET_ZOOM;
+  if (!tileLayer) return;
+  const want = tileForced || !geo || map.getZoom() >= STREET_ZOOM; // 구 경계가 없는 지역은 늘 거리 지도
   if (want === streetOn()) return;
   want ? tileLayer.addTo(map).bringToBack() : map.removeLayer(tileLayer);
   map.getContainer().classList.toggle('street', want);
@@ -236,7 +237,7 @@ function renderSheet() {
   const counts = districtCounts();
   const places = filteredPlaces();
   const dTitle = view.district === 'all' ? '가볼 곳' : districtName(view.district);
-  const usedDistricts = DISTRICTS.filter((d) => counts[d.id]).sort((a, b) => counts[b.id] - counts[a.id]);
+  const usedDistricts = Object.keys(counts).map((id) => ({ id, ko: districtName(id), color: districtColor(id) })).sort((a, b) => counts[b.id] - counts[a.id]);
 
   sheetBody.innerHTML = `
     <div class="sheet-head">
@@ -245,7 +246,7 @@ function renderSheet() {
     </div>
     <label class="search">
       <svg class="i"><use href="#i-search"/></svg>
-      <input id="placeSearch" type="search" placeholder="장소 · 중국어 · 태그 검색" value="${esc(view.q)}" autocomplete="off" enterkeyhint="search" />
+      <input id="placeSearch" type="search" placeholder="${esc(L10N().searchPh)}" value="${esc(view.q)}" autocomplete="off" enterkeyhint="search" />
     </label>
     ${catChipsHtml()}
     ${usedDistricts.length > 1 ? `<div class="chips scroll-x dchips">
@@ -254,7 +255,7 @@ function renderSheet() {
     <ul class="list" id="placeList">${placeListHtml(places)}</ul>
     <h3 class="sub">공항</h3>
     <ul class="list">
-      ${AIRPORTS.map((a) => `<li><button type="button" class="row" data-airport="${a.id}"><span class="thumb ico">${catSvg('', 'i').replace('#c-etc', '#c-plane')}</span><span class="row-main"><b>${esc(a.name)}</b><small>${esc(a.nameZh)}</small></span><svg class="i row-go"><use href="#i-chev"/></svg></button></li>`).join('')}
+      ${(curDest?.airports || []).map((a) => `<li><button type="button" class="row" data-airport="${a.id}"><span class="thumb ico">${catSvg('', 'i').replace('#c-etc', '#c-plane')}</span><span class="row-main"><b>${esc(a.name)}</b><small>${esc(a.nameZh)}</small></span><svg class="i row-go"><use href="#i-chev"/></svg></button></li>`).join('')}
     </ul>`;
 
   const search = sheetBody.querySelector('#placeSearch');
@@ -272,7 +273,6 @@ function renderDaySheet() {
   const idx = days().indexOf(view.day);
   const { stops, places } = dayStops(view.day);
   const legs = legsOf(stops);
-  const total = legs.reduce((s, l) => s + l.km, 0);
   const stopRow = (st) => {
     const mark = st.kind === 'place' ? `<b>${st.n}</b>` : `<svg class="i"><use href="#${st.kind === 'stay' ? 'c-bed' : 'c-plane'}"/></svg>`;
     const data = st.kind === 'place' ? `data-place="${st.id}"` : st.kind === 'stay' ? `data-stay="${st.id}"` : `data-airport="${st.id}"`;
@@ -282,13 +282,13 @@ function renderDaySheet() {
       <span class="row-main"><b>${esc(st.kind === 'place' ? st.title || st.name : st.name)}</b><small>${esc(st.kind === 'place' ? (st.title !== st.name ? st.name : districtName(st.ref.district)) : st.title || '')}</small></span>
     </button></li>`;
   };
-  const legRow = (lg) => `<li class="it-leg"><span>${esc(lg.label)}</span>${legLinksHtml(lg)}</li>`;
+  const legRow = (lg) => `<li class="it-leg"><span>길찾기</span>${legLinksHtml(lg)}</li>`;
   sheetBody.innerHTML = `
     <div class="sheet-head">
       <h2><span class="eyebrow">DAY ${idx + 1}</span>${fmtDate(view.day)}</h2>
       <button type="button" class="btn sm ghost" data-day-all>전체 지도</button>
     </div>
-    <p class="day-sum">장소 <b>${places.length}</b>곳 · 이동 <b>${total.toFixed(1)}</b>km <small>(직선 기준)</small></p>
+    <p class="day-sum">장소 <b>${places.length}</b>곳</p>
     ${places.length ? `<ol class="itin">${stops.map((st, i) => stopRow(st) + (legs[i] ? legRow(legs[i]) : '')).join('')}</ol>`
     : `${empty('', '이 날 장소가 연결된 일정이 없어요.<br>일정에서 <b>장소 연결</b>을 고르면 여기에 동선이 그려져요.')}`}
     <div class="btn-row"><a class="btn ghost" href="#/t/${S.key}/schedule">일정 편집</a></div>`;
@@ -300,15 +300,12 @@ function renderDetail() {
   if (!item) { view.detail = null; return renderSheet(); }
   const isPlace = type === 'place';
   fillAddrLater(isPlace ? 'places' : 'stays', item);
-  const d = DISTRICT_BY_ID[item.district];
+  const dName = districtName(item.district);
   const cat = PLACE_CATS[item.category] || PLACE_CATS.etc;
   const meta = isPlace
-    ? `<em class="cat-tag">${cat.en}</em>${esc(cat.label)} · ${esc(hasLL(item) ? d?.ko || '구 미지정' : '어디서나')}${item.date ? ' · ' + fmtDate(item.date) : ''}`
-    : `<em class="cat-tag">STAY</em><span class="tag ${STAY_STATUS[item.status].cls}">${STAY_STATUS[item.status].label}</span> · ${esc(d?.ko || '')}`;
+    ? `<em class="cat-tag">${cat.en}</em>${esc(cat.label)} · ${esc(hasLL(item) ? dName : '어디서나')}${item.date ? ' · ' + fmtDate(item.date) : ''}`
+    : `<em class="cat-tag">STAY</em><span class="tag ${STAY_STATUS[item.status].cls}">${STAY_STATUS[item.status].label}</span>${item.district ? ` · ${esc(dName)}` : ''}`;
   const kw = item.nameZh || item.name;
-  const nav = hasLL(item) && !item.approx
-    ? `<a class="btn" href="${amapNav(item)}" target="_blank" rel="noopener"><svg class="i"><use href="#i-nav"/></svg>고덕 길찾기</a>`
-    : `<a class="btn" href="${amapSearch(kw)}" target="_blank" rel="noopener"><svg class="i"><use href="#i-search"/></svg>고덕에서 찾기</a>`;
   sheetBody.innerHTML = `
     <div class="sheet-head">
       <button type="button" class="icon-btn" data-back aria-label="뒤로"><svg class="i"><use href="#i-back"/></svg></button>
@@ -331,8 +328,7 @@ function renderDetail() {
       </dl>
       <div class="acts">
         ${kw ? '<button type="button" class="btn primary wide" data-driver><svg class="i"><use href="#i-car"/></svg>기사님께 보여주기</button>' : ''}
-        ${nav}
-        <a class="btn" href="${googleUrl(item)}" target="_blank" rel="noopener"><svg class="i"><use href="#i-ext"/></svg>구글맵</a>
+        ${navButtonsHtml(item)}
         ${item.url ? `<a class="btn ghost wide" href="${esc(item.url)}" target="_blank" rel="noopener"><svg class="i"><use href="#i-link"/></svg>링크 열기</a>` : ''}
       </div>
     </div>`;
@@ -360,7 +356,7 @@ function selectDistrict(id, toggle = false) {
   refreshDistrictStyles();
   renderSheet();
   if (id !== 'all') {
-    const layer = featureLayers.get(DISTRICT_BY_ID[id].adcode);
+    const layer = featureLayers.get(DISTRICT_BY_ID[id]?.adcode);
     const pts = S.data.places.filter((p) => p.district === id && hasLL(p));
     const b = pts.length ? L.latLngBounds(pts.map((p) => [p.lat, p.lng])) : layer?.getBounds();
     if (b) map.flyToBounds(b, { ...fitPad(), maxZoom: 16, duration: 0.6 });
@@ -378,7 +374,7 @@ sheetBody.addEventListener('click', (e) => {
   else if (d.place) openDetail('place', d.place);
   else if (d.stay) openDetail('stay', d.stay);
   else if (d.airport) {
-    const a = AIRPORTS.find((x) => x.id === d.airport);
+    const a = (curDest?.airports || []).find((x) => x.id === d.airport);
     map.flyTo([a.lat, a.lng], 13);
     if (!isDesktop()) setSnap('peek');
   } else if ('dayAll' in d) setDay('all');
@@ -389,7 +385,7 @@ sheetBody.addEventListener('click', (e) => {
   } else if ('driver' in d) {
     const { type, id } = view.detail;
     const it = byId(type === 'place' ? 'places' : 'stays', id);
-    showDriver(it.nameZh || it.name, it.addressZh);
+    showDriver(it.nameZh || it.name, it.addressZh, dest().country.driverAsk);
   } else if ('wish' in d) {
     const p = byId('places', view.detail.id);
     update('places', p.id, { wish: !p.wish });
@@ -458,12 +454,12 @@ function endPick(latlng) {
 }
 document.getElementById('pickCancel').addEventListener('click', () => endPick(null));
 
-/** 현재 GPS 위치 (GCJ-02) */
+/** 현재 GPS 위치 (지도 좌표: 중국은 GCJ-02) */
 export function myLocation() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('위치 기능 미지원'));
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve(wgs2gcj(p.coords.latitude, p.coords.longitude)),
+      (p) => resolve(dest().toMap(p.coords.latitude, p.coords.longitude)),
       (e) => reject(e),
       { enableHighAccuracy: true, timeout: 10000 },
     );
@@ -472,51 +468,87 @@ export function myLocation() {
 
 // ───────── 위치 입력: 이름·주소 검색 → 결과 선택 → 미리보기 지도에서 확인·수정 ─────────
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search';
-const CJK = /[一-鿿]/;
+const CJK = /[぀-ヿ一-鿿]/; // 한자·일본 가나 (현지 글자)
+const LANG = () => dest().country.searchLang;
 
-/** OpenStreetMap 검색 (상하이 안에서만). 결과 좌표는 GCJ-02로 변환 */
-/** 좌표 → 중국어 주소 (도로명까지 있을 때만) */
-async function reverseAddr(lat, lng) {
-  const [wl, wn] = gcj2wgs(lat, lng);
-  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=zh-CN&lat=${wl}&lon=${wn}`, { headers: { Accept: 'application/json' } });
-  if (!res.ok) return '';
-  const a = (await res.json()).address || {};
-  const qu = [a.city_district, a.district, a.suburb, a.county].find((s) => s && /区$/.test(s)) || '';
+/** 주소 부품 → 현지식 주소 한 줄. 도로·동네 이름까지 없으면 '' */
+function fmtAddr(a) {
+  if (dest().country.id === 'JP') {
+    const pref = a.province || a.state || '';
+    const city = [a.city, a.town, a.village].find(Boolean) || '';
+    const ward = a.city_district || '';
+    const area = [a.quarter, a.suburb, a.neighbourhood].find((s) => s && !/[区市]$/.test(s)) || '';
+    if (!area && !a.road) return '';
+    return `${pref}${city !== pref ? city : ''}${ward !== city ? ward : ''}${area}${a.house_number || ''}`;
+  }
+  const city = [a.city, a.state].find((s) => s && /市$/.test(s)) || '';
+  const qu = [a.city_district, a.district, a.suburb, a.county].find((s) => s && /[区县]$/.test(s)) || '';
   const road = [a.road, a.pedestrian].find((s) => s && CJK.test(s)) || '';
   if (!road) return '';
-  return `上海市${qu}${road}${a.house_number ? a.house_number.replace(/号$/, '') + '号' : ''}`;
+  return `${city}${qu}${road}${a.house_number ? a.house_number.replace(/号$/, '') + '号' : ''}`;
+}
+/** 주소 부품 → 구 이름 (구 경계 데이터가 없는 지역용) */
+function districtFromAddr(a) {
+  const cands = dest().country.id === 'JP' ? [a.city_district, a.suburb, a.city, a.town, a.village] : [a.city_district, a.district, a.suburb, a.county];
+  return cands.find((s) => s && /[区市町村县]$/.test(s)) || undefined;
+}
+/** 좌표 → { addr, district } */
+async function reverseAddr(lat, lng) {
+  const [wl, wn] = dest().fromMap(lat, lng);
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=${LANG().split(',')[0]}&lat=${wl}&lon=${wn}`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) return {};
+  const a = (await res.json()).address || {};
+  return { addr: fmtAddr(a), district: detectDistrict(lat, lng) || districtFromAddr(a) };
+}
+/** 저장 직전: 좌표만 있고 주소·구가 비어 있으면 채우기 (장소·숙소 폼 공용) */
+export async function fillFromCoords(v) {
+  if (!hasLL(v) || v.approx || (v.addressZh && v.district)) return;
+  try {
+    const r = await reverseAddr(v.lat, v.lng);
+    if (!v.addressZh && r.addr) v.addressZh = r.addr;
+    if (!v.district && r.district) v.district = r.district;
+  } catch { /* 검색 서버 연결 실패 → 그냥 저장 */ }
 }
 const addrTried = new Set();
 /** 상세를 열 때 주소가 비어 있으면 한 번 채워두기 (대표 위치는 제외) */
 function fillAddrLater(col, item) {
   if (item.addressZh || item.approx || !hasLL(item) || addrTried.has(item.id)) return;
   addrTried.add(item.id);
-  reverseAddr(item.lat, item.lng).then((addr) => { if (addr) update(col, item.id, { addressZh: addr }); }).catch(() => {});
+  reverseAddr(item.lat, item.lng).then((r) => {
+    const patch = {};
+    if (r.addr) patch.addressZh = r.addr;
+    if (!item.district && r.district) patch.district = r.district;
+    if (Object.keys(patch).length) update(col, item.id, patch);
+  }).catch(() => {});
 }
 
+/** OpenStreetMap 검색 (여행 지역 안에서만). 결과 좌표는 지도 좌표로 변환 */
 async function searchPlaces(q) {
-  const url = `${NOMINATIM}?format=jsonv2&addressdetails=1&namedetails=1&limit=8&bounded=1&viewbox=120.85,31.88,122.0,30.68&accept-language=zh-CN,ko,en&q=${encodeURIComponent(q)}`;
+  const d = dest();
+  const [s, w, n, e] = d.bbox;
+  const url = `${NOMINATIM}?format=jsonv2&addressdetails=1&namedetails=1&limit=8&bounded=1&viewbox=${w},${n},${e},${s}&accept-language=${LANG()}&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(res.status);
   const seen = new Set();
+  const onlyGeo = d.regions.every((r) => r.geo); // 상하이만 가는 여행이면 상하이 구 안의 결과만
+  const nameKey = d.country.id === 'JP' ? 'name:ja' : 'name:zh';
   return (await res.json()).map((r) => {
-    const [lat, lng] = wgs2gcj(+r.lat, +r.lon);
-    const parts = r.display_name.split(',').map((s) => s.trim());
-    const qu = parts.find((s) => /区$/.test(s)) || '';
+    const [lat, lng] = d.toMap(+r.lat, +r.lon);
+    const parts = r.display_name.split(',').map((x) => x.trim());
     const a = r.address || {};
-    const road = [a.road, a.pedestrian].find((s) => s && CJK.test(s)) || '';
-    const nameZh = r.namedetails?.['name:zh'] || r.namedetails?.name || r.name || parts[0];
+    const nameZh = r.namedetails?.[nameKey] || r.namedetails?.name || r.name || parts[0];
     const kind = placeKind(r.category, r.type);
     return {
       lat, lng, nameZh, kind,
-      district: detectDistrict(lat, lng),
-      addressZh: `上海市${qu}${road}${road && a.house_number ? a.house_number + '号' : ''}`,
-      // 중국어 지명만 (영어·러시아어 등 섞인 이름은 빼기), 상하이시·중국·우편번호 제외
-      line: [...new Set(parts.slice(1).filter((s) => CJK.test(s) && !/^(上海市|中国)$/.test(s)))].slice(0, 3).join(' · '),
+      district: detectDistrict(lat, lng) || districtFromAddr(a),
+      inGeo: !!detectDistrict(lat, lng),
+      addressZh: fmtAddr(a),
+      // 현지 글자 지명만, 나라·우편번호 제외
+      line: [...new Set(parts.slice(1).filter((x) => CJK.test(x) && !/^(中国|日本)$/.test(x)))].slice(0, 3).join(' · '),
       rank: kind.rank,
     };
   }).filter((r) => {
-    if (!r.district) return false; // 상하이 밖 (쑤저우 등)
+    if (onlyGeo && !r.inGeo) return false; // 상하이 밖 (쑤저우 등)
     const k = `${r.nameZh}|${r.kind.label}|${r.lat.toFixed(3)}|${r.lng.toFixed(3)}`;
     if (seen.has(k)) return false;
     seen.add(k);
@@ -549,7 +581,7 @@ export function locationFieldHtml(lat, lng, required, hint) {
     <span class="field-label">위치${required ? ' *' : ''}</span>
     <input type="hidden" name="_loc" value="${val}" />
     <div class="loc-search">
-      <input type="search" data-q placeholder="장소 이름 · 주소 검색 (예: 豫园, Yu Garden)" autocomplete="off" enterkeyhint="search" />
+      <input type="search" data-q placeholder="장소 이름 · 주소 검색 (예: ${dest().country.id === 'JP' ? '浅草寺, Sensoji' : '豫园, Yu Garden'})" autocomplete="off" enterkeyhint="search" />
       <button type="button" class="btn primary" data-qbtn aria-label="검색"><svg class="i"><use href="#i-search"/></svg></button>
     </div>
     <ul class="loc-results" data-results hidden></ul>
@@ -566,7 +598,7 @@ export function locationFieldHtml(lat, lng, required, hint) {
       </div>
       <input type="text" data-paste placeholder="구글맵 좌표나 주소창 링크 붙여넣기" autocomplete="off" />
     </details>
-    <small class="hint">${hint || '한글보다 중국어·영어로 검색하면 잘 나와요.'}</small>
+    <small class="hint">${hint || dest().country.searchHint}</small>
   </div>`;
 }
 
@@ -586,7 +618,7 @@ export function bindLocationField(form) {
   };
   const describe = (lat, lng) => {
     const d = detectDistrict(lat, lng);
-    sum.textContent = d ? `${districtName(d)} · 선택됨` : '상하이 밖이거나 구를 알 수 없는 위치';
+    sum.textContent = d ? `${districtName(d)} · 선택됨` : (geo ? '구를 알 수 없는 위치 · 저장하면 주소로 판별' : '위치 선택됨 · 구·주소는 저장할 때 자동으로');
     const sel = form.elements.district;
     if (sel && d) sel.value = d;
   };
@@ -595,7 +627,8 @@ export function bindLocationField(form) {
     if (!mini) {
       mini = L.map(root.querySelector('[data-minimap]'), { zoomControl: false, attributionControl: false, dragging: true, tap: false })
         .setView([lat, lng], 16);
-      L.tileLayer(TILE_URL, { subdomains: '1234', maxZoom: 18, className: 'street-tiles' }).addTo(mini);
+      const t = dest().country.tiles;
+      L.tileLayer(t.url, { subdomains: t.subdomains, maxZoom: 18, className: 'street-tiles' }).addTo(mini);
       marker = L.marker([lat, lng], {
         draggable: true,
         icon: L.divIcon({ className: 'pin-wrap', html: '<div class="pin cat-etc"><svg class="i"><use href="#c-etc"/></svg></div>', iconSize: [0, 0] }),
@@ -626,7 +659,7 @@ export function bindLocationField(form) {
       found = await searchPlaces(text);
       results.innerHTML = found.length
         ? found.map((r, i) => `<li><button type="button" data-hit="${i}"><b>${esc(r.nameZh)} <em class="cat-tag">${esc(r.kind.label)}</em></b><small>${esc(districtName(r.district))}${r.line ? ' · ' + esc(r.line) : ''}</small></button></li>`).join('')
-        : `<li class="loc-msg">검색 결과가 없어요.${CJK.test(text) ? '' : ' 중국어나 영어로 검색해 보세요.'} 아래 "검색에 안 나오면"을 써도 돼요.</li>`;
+        : `<li class="loc-msg">검색 결과가 없어요.${CJK.test(text) ? '' : ` ${dest().country.langKo}나 영어로 검색해 보세요.`} 아래 "검색에 안 나오면"을 써도 돼요.</li>`;
     } catch {
       results.innerHTML = '<li class="loc-msg">검색 서버에 연결하지 못했어요. 아래 "큰 지도에서 찍기"를 써 주세요.</li>';
     }
@@ -639,7 +672,9 @@ export function bindLocationField(form) {
     const r = found[b.dataset.hit];
     setLoc(r.lat, r.lng);
     if (CJK.test(r.nameZh)) fillIfEmpty('nameZh', r.nameZh);
-    if (/区.+/.test(r.addressZh)) fillIfEmpty('addressZh', r.addressZh); // 도로명까지 있을 때만
+    if (r.addressZh) fillIfEmpty('addressZh', r.addressZh); // 도로·동네 이름까지 있을 때만
+    const sel = form.elements.district;
+    if (sel && r.district && !detectDistrict(r.lat, r.lng)) { if (![...sel.options].some((o) => o.value === r.district)) sel.add(new Option(r.district, r.district)); sel.value = r.district; }
     results.hidden = true;
   });
   root.querySelector('[data-clear]').addEventListener('click', () => {
@@ -693,7 +728,7 @@ function inRing(x, y, ring) {
   return inside;
 }
 export function detectDistrict(lat, lng) {
-  if (!geoData) return undefined;
+  if (!geoData || !geo) return undefined; // 구 경계 데이터가 있는 지역(상하이)만
   for (const f of geoData.features) {
     const g = f.geometry;
     const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
@@ -704,7 +739,12 @@ export function detectDistrict(lat, lng) {
   return undefined;
 }
 
-export const districtOptions = () => ({ '': '자동 (위치로 판별)', ...Object.fromEntries(DISTRICTS.map((d) => [d.id, d.ko])) });
+export function districtOptions() {
+  if (geo) return { '': '자동 (위치로 판별)', ...Object.fromEntries(DISTRICTS.map((d) => [d.id, d.ko])) };
+  // 구 경계가 없는 지역: 지금까지 나온 구 이름들
+  const names = [...new Set([...S.data.places, ...S.data.stays].map((x) => x.district).filter(Boolean))].sort();
+  return { '': '자동 (주소로 판별)', ...Object.fromEntries(names.map((n) => [n, n])) };
+}
 
 // ───────── 장소 추가/수정 폼 ─────────
 /** @param preset [lat, lng] — 지도를 꾹 눌러 추가할 때 */
@@ -720,11 +760,11 @@ export function placeForm(p = null, preset = null) {
       ${field('이름 *', input('name', p?.name, 'required placeholder="예) 와이탄 야경" autocomplete="off"'))}
       <label class="fav-check"><input type="checkbox" name="wish" ${p?.wish ? 'checked' : ''} /><svg class="i"><use href="#i-star"/></svg>즐겨찾기 <small>목록 맨 위에 보여요</small></label>
       ${field('분류', segmented('category', Object.fromEntries(Object.entries(PLACE_CATS).map(([k, c]) => [k, c.label])), p?.category || 'sight'))}
-      ${locationFieldHtml(lat, lng, false, '한글보다 중국어·영어로 검색하면 잘 나와요. 체인점·배달처럼 위치가 정해지지 않았으면 비워두세요.')}
+      ${locationFieldHtml(lat, lng, false, `${dest().country.searchHint} 체인점·배달처럼 위치가 정해지지 않았으면 비워두세요.`)}
       ${field('구', select('district', districtOptions(), presetDistrict))}
-      ${field('중국어 이름', input('nameZh', p?.nameZh, 'placeholder="外滩" autocomplete="off"'), '기사님께 보여주기 · 고덕 검색에 쓰여요.')}
-      ${field('중국어 주소', input('addressZh', p?.addressZh, 'placeholder="上海市黄浦区中山东一路" autocomplete="off"'))}
-      ${field('가는 법', input('howto', p?.howto, 'placeholder="예) 10호선 예원역" autocomplete="off"'))}
+      ${field(L10N().nameLocal, input('nameZh', p?.nameZh, `placeholder="${L10N().namePh}" autocomplete="off"`), L10N().nameLocalHint)}
+      ${field(L10N().addrLocal, input('addressZh', p?.addressZh, `placeholder="${L10N().addrPh}" autocomplete="off"`))}
+      ${field('가는 법', input('howto', p?.howto, 'placeholder="예) 지하철 OO역 2번 출구" autocomplete="off"'))}
       ${field('태그', input('_tags', (p?.tags || []).join(', '), 'placeholder="야경, 산책" autocomplete="off"'), '쉼표로 구분')}
       ${field('방문 예정일', select('date', { '': '미정', ...Object.fromEntries(ds.map((d) => [d, fmtDate(d)])) }, p?.date || ''))}
       ${field('링크', input('url', p?.url, 'type="url" placeholder="https://"'))}
@@ -737,7 +777,7 @@ export function placeForm(p = null, preset = null) {
       delete v._tags;
       if (hasLL(v) && p?.approx && (v.lat !== p.lat || v.lng !== p.lng)) v.approx = false; // 직접 위치를 고치면 대표 위치 표시 해제
       if (p) v.edited = true; // 수정 화면에서 저장한 장소는 추천 데이터 갱신 때 덮어쓰지 않음
-      if (hasLL(v) && !v.addressZh && !v.approx) v.addressZh = await reverseAddr(v.lat, v.lng).catch(() => '') || undefined; // 좌표만 있으면 주소 자동 입력
+      await fillFromCoords(v); // 좌표만 있으면 주소·구 자동 입력
       if (p) await update('places', p.id, v);
       else {
         const id = await add('places', { ...v, visited: false });
@@ -772,68 +812,108 @@ function fitCore(animate) {
 function fitAll(animate) {
   map.invalidateSize();
   const opts = isDesktop() ? { padding: [24, 24] } : { paddingTopLeft: [12, 110], paddingBottomRight: [60, 150] };
-  animate ? map.flyToBounds(SH_BOUNDS, { ...opts, duration: 0.6 }) : map.fitBounds(SH_BOUNDS, opts);
+  const b = curDest?.mapBounds || [[30.68, 120.85], [31.88, 122.0]];
+  animate ? map.flyToBounds(b, { ...opts, duration: 0.6 }) : map.fitBounds(b, opts);
 }
 
 // ───────── 초기화 ─────────
+/** 여행 목적지에 맞춰 지도 바꾸기: 배경 지도(고덕/오픈 지도), 범위, 구 경계(상하이), 공항. 같은 목적지면 아무것도 안 함 */
+export async function applyDest() {
+  if (!map || !S.trip) return;
+  const d = dest();
+  const key = `${d.country.id}:${d.regions.map((r) => r.id).join(',')}`;
+  if (key === destKey) return;
+  destKey = key;
+  curDest = d;
+
+  // 배경 지도
+  if (tileLayer && map.hasLayer(tileLayer)) map.removeLayer(tileLayer);
+  const t = d.country.tiles;
+  tileLayer = L.tileLayer(t.url, { subdomains: t.subdomains, maxZoom: 18, attribution: t.attribution, className: 'street-tiles' });
+
+  // 범위: 여행 지역 + 여유
+  const [s, w, n, e] = d.bbox;
+  map.setMaxBounds([d.toMap(s - 1, w - 1.2), d.toMap(n + 1, e + 1.2)]);
+
+  // 구 경계 (데이터가 있는 지역만)
+  [geo, geoOutline, geoLabels].forEach((l) => l && map.removeLayer(l));
+  geo = geoOutline = geoLabels = null;
+  geoData = null;
+  featureLayers.clear();
+  const geoRegion = d.regions.find((r) => r.geo);
+  if (geoRegion) {
+    try {
+      geoData = await (await fetch(geoRegion.geo)).json();
+    } catch (err) {
+      console.error(err);
+      toast('구 경계 데이터를 불러오지 못했어요.');
+    }
+  }
+  if (geoData && key === destKey) {
+    geoOutline = L.geoJSON(geoData, { style: { color: cssVar('--map-edge') || '#ff4f3f', weight: 3, fill: false }, interactive: false }).addTo(map);
+    geo = L.geoJSON(geoData, {
+      style: styleDistrict,
+      onEachFeature: (f, layer) => {
+        featureLayers.set(f.properties.adcode, layer);
+        layer.on('click', (ev) => {
+          if (pickResolve || streetOn()) return; // 거리 지도에서는 구 클릭 무시
+          L.DomEvent.stopPropagation(ev);
+          const dd = DISTRICT_BY_ADCODE[f.properties.adcode];
+          if (dd) selectDistrict(dd.id, true);
+        });
+      },
+    }).addTo(map);
+    geo.bringToBack();
+    geoOutline.bringToBack();
+    // 구 이름 라벨 (축소 상태에서만)
+    geoLabels = L.layerGroup().addTo(map);
+    for (const f of geoData.features) {
+      const dd = DISTRICT_BY_ADCODE[f.properties.adcode];
+      const c = f.properties.centroid || f.properties.center;
+      if (!dd || !c) continue;
+      L.marker([c[1], c[0]], {
+        interactive: false,
+        icon: L.divIcon({ className: 'dlabel-wrap', html: `<span class="dlabel ${dd.small ? 'small' : ''}">${esc(dd.ko)}</span>`, iconSize: [0, 0] }),
+      }).addTo(geoLabels);
+    }
+  }
+  map.getContainer().classList.toggle('no-geo', !geo);
+
+  // 공항
+  airportLayer.clearLayers();
+  for (const a of d.airports) {
+    L.marker([a.lat, a.lng], {
+      zIndexOffset: 1000,
+      icon: L.divIcon({ className: 'airport-wrap', html: `<div class="airport"><i><svg class="i"><use href="#c-plane"/></svg></i><span>${esc(a.name)}</span></div>`, iconSize: [0, 0] }),
+    }).bindTooltip(esc(a.nameZh), { direction: 'bottom' }).addTo(airportLayer);
+  }
+
+  view.district = 'all';
+  view.detail = null;
+  fitted = false;
+  syncStreet();
+  refreshDistrictStyles();
+  renderDayBar();
+  renderPins();
+  renderSheet();
+  if (!mapEl.hidden) { fitted = S.data.places.some(hasLL); fitted ? fitCore(false) : fitAll(false); }
+}
+
 export async function initMap() {
   if (map) return;
   map = L.map('map', {
     zoomControl: false,
     attributionControl: true,
-    minZoom: 8,
+    minZoom: 5,
     maxZoom: 18,
-    maxBounds: [[29.8, 119.8], [32.6, 123.0]],
     zoomSnap: 0.25,
     tapHold: true,
   });
   L.control.zoom({ position: 'topright' }).addTo(map);
   map.attributionControl.setPrefix(false);
-  fitAll(false);
+  map.setView([31.2304, 121.4737], 10); // 여행을 열면 applyDest()가 목적지로 옮김
 
-  tileLayer = L.tileLayer(TILE_URL, { subdomains: '1234', maxZoom: 18, attribution: '© 高德地图', className: 'street-tiles' });
-
-  try {
-    geoData = await (await fetch('data/shanghai.geojson')).json();
-  } catch (e) {
-    console.error(e);
-    toast('구 경계 데이터를 불러오지 못했어요.');
-    geoData = { type: 'FeatureCollection', features: [] };
-  }
-
-  geoOutline = L.geoJSON(geoData, { style: { color: cssVar('--map-edge') || '#ff4f3f', weight: 3, fill: false }, interactive: false }).addTo(map);
-  geo = L.geoJSON(geoData, {
-    style: styleDistrict,
-    onEachFeature: (f, layer) => {
-      featureLayers.set(f.properties.adcode, layer);
-      layer.on('click', (e) => {
-        if (pickResolve || streetOn()) return; // 거리 지도에서는 구 클릭 무시
-        L.DomEvent.stopPropagation(e);
-        const d = DISTRICT_BY_ADCODE[f.properties.adcode];
-        if (d) selectDistrict(d.id, true);
-      });
-    },
-  }).addTo(map);
-
-  // 구 이름 라벨 (축소 상태에서만)
-  const labels = L.layerGroup().addTo(map);
-  for (const f of geoData.features) {
-    const d = DISTRICT_BY_ADCODE[f.properties.adcode];
-    const c = f.properties.centroid || f.properties.center;
-    if (!d || !c) continue;
-    L.marker([c[1], c[0]], {
-      interactive: false,
-      icon: L.divIcon({ className: 'dlabel-wrap', html: `<span class="dlabel ${d.small ? 'small' : ''}">${esc(d.ko)}</span>`, iconSize: [0, 0] }),
-    }).addTo(labels);
-  }
-
-  for (const a of AIRPORTS) {
-    L.marker([a.lat, a.lng], {
-      zIndexOffset: 1000,
-      icon: L.divIcon({ className: 'airport-wrap', html: `<div class="airport"><i><svg class="i"><use href="#c-plane"/></svg></i><span>${esc(a.name)}</span></div>`, iconSize: [0, 0] }),
-    }).bindTooltip(esc(a.nameZh), { direction: 'bottom' }).addTo(map);
-  }
-
+  airportLayer = L.layerGroup().addTo(map);
   placeLayer = L.layerGroup().addTo(map);
   stayLayer = L.layerGroup().addTo(map);
   routeLayer = L.layerGroup().addTo(map);
@@ -865,7 +945,7 @@ export async function initMap() {
   document.getElementById('fitBtn').addEventListener('click', () => {
     if (view.day !== 'all') return setDay(view.day);
     selectDistrict('all');
-    // 한 번 누르면 시내, 시내 상태에서 또 누르면 상하이 전체
+    // 한 번 누르면 장소가 몰린 곳, 거기서 또 누르면 여행 지역 전체
     map.getZoom() >= 12 ? fitAll(true) : fitCore(true);
   });
   document.getElementById('tileBtn').addEventListener('click', () => {
@@ -888,6 +968,7 @@ export async function initMap() {
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', refreshDistrictStyles);
 
   onChange((what) => {
+    if (what === 'trip' || what === 'all') applyDest(); // 목적지가 바뀌었을 때만 실제로 다시 그림
     if (['places', 'stays', 'schedule', 'transports', 'all', 'trip'].includes(what)) {
       if (what === 'trip' || what === 'all') renderDayBar();
       refreshDistrictStyles();
@@ -930,4 +1011,3 @@ export function showDayOnMap(day) {
   setTimeout(() => setDay(day), 150);
 }
 
-export { amapUrl };

@@ -1,19 +1,20 @@
 // 일정: 날짜별 타임라인 (직접 넣은 일정 + 교통편 + 숙소 체크인/아웃) + 지도 동선 연결
 import { S, add, update, remove, byId } from './state.js';
-import { PLACE_CATS, TRANSPORT_TYPES, districtName } from './data.js';
-import { esc, fmtDate, dateRange, shanghaiToday, shanghaiNowHM, toast, dday, minusMinutes } from './util.js';
+import { PLACE_CATS, districtName } from './data.js';
+import { esc, fmtDate, dateRange, toast, dday, minusMinutes } from './util.js';
+import { transportTypes, localToday, localNowHM } from './dest.js';
 import { formModal, field, input, textarea, select, empty } from './ui.js';
 import { focusOnMap, showDayOnMap } from './map.js';
 import { transportForm, stayForm } from './stay.js';
-import { dayStops, legsOf } from './route.js';
+import { dayStops } from './route.js';
 
 let selDay = null;
 
 const days = () => dateRange(S.trip.startDate, S.trip.endDate);
 const svg = (id) => `<svg class="i"><use href="#${id}"/></svg>`;
 
-/** 그날의 타임라인 항목 (시간순). sort: 정렬용 시각 */
-function itemsOf(date) {
+/** 그날의 타임라인 항목 (시간순). sort: 정렬용 시각. PDF 일정표에서도 씀 */
+export function itemsOf(date) {
   const out = [];
   for (const s of S.data.schedule) if (s.date === date) out.push({ kind: 'schedule', time: s.time, sort: s.time, ref: s });
   const trs = S.data.transports.filter((t) => t.date === date);
@@ -51,7 +52,7 @@ function row(it, numOf) {
   }
   if (it.kind === 'transport') {
     const t = it.ref;
-    const ty = TRANSPORT_TYPES[t.type] || TRANSPORT_TYPES.etc;
+    const ty = transportTypes()[t.type] || { label: t.type, icon: '🧭' };
     return `<li class="tl-item transport">
       <span class="tl-time">${esc(t.depart || '')}</span>
       <span class="tl-dot"><i>${svg(t.type === 'flight' ? 'c-plane' : 'i-car')}</i></span>
@@ -75,9 +76,9 @@ function row(it, numOf) {
 
 /** 여행 중이면 "다음 일정" */
 function nextCard() {
-  const today = shanghaiToday();
+  const today = localToday();
   if (!days().includes(today)) return '';
-  const now = shanghaiNowHM();
+  const now = localNowHM();
   const next = itemsOf(today).find((it) => it.time && it.time >= now && !(it.kind === 'schedule' && it.ref.done));
   if (!next) return '';
   const title = next.kind === 'transport' ? `${next.ref.from} → ${next.ref.to}` : next.ref.title || next.ref.name;
@@ -87,13 +88,12 @@ function nextCard() {
 export function renderSchedule(el) {
   const ds = days();
   if (!selDay || !ds.includes(selDay)) {
-    const today = shanghaiToday();
+    const today = localToday();
     selDay = ds.includes(today) ? today : ds[0];
   }
   const items = itemsOf(selDay);
-  const { places: stops, stops: allStops } = dayStops(selDay);
+  const { places: stops } = dayStops(selDay);
   const numOf = new Map(stops.map((s) => [s.sch.id, s.n]));
-  const km = legsOf(allStops).reduce((s, l) => s + l.km, 0);
   const dd = dday(S.trip.startDate, S.trip.endDate);
 
   el.innerHTML = `
@@ -102,7 +102,7 @@ export function renderSchedule(el) {
         <h1>일정</h1>
         <span class="meta">${fmtDate(ds[0])} – ${fmtDate(ds.at(-1))} · ${ds.length - 1}박 ${ds.length}일${dd ? ` · ${esc(dd)}` : ''}</span>
       </div>
-      <button type="button" class="btn primary" id="addSch">${svg('i-plus')}일정</button>
+      <div class="head-acts"><button type="button" class="btn ghost" id="schExport" aria-label="PDF로 내보내기">${svg('i-download')}<span class="lbl">PDF</span></button><button type="button" class="btn primary" id="addSch">${svg('i-plus')}일정</button></div>
     </header>
     ${nextCard()}
     <div class="day-tabs">
@@ -112,11 +112,12 @@ export function renderSchedule(el) {
       ${items.length ? items.map((it) => row(it, numOf)).join('') : `<li>${empty('', '이 날 일정이 없어요.')}</li>`}
     </ul>
     <button type="button" class="route-cta" data-route>
-      <span><b>지도에서 동선 보기</b><small>${stops.length ? `장소 ${stops.length}곳 · 약 ${km.toFixed(1)}km` : '일정에 장소를 연결하면 동선이 그려져요'}</small></span>
+      <span><b>지도에서 동선 보기</b><small>${stops.length ? `장소 ${stops.length}곳 · 순서대로 화살표로 보여줘요` : '일정에 장소를 연결하면 동선이 그려져요'}</small></span>
       ${svg('i-route')}
     </button>`;
 
   el.querySelector('#addSch').onclick = () => scheduleForm(null, selDay);
+  el.querySelector('#schExport').onclick = () => import('./print.js').then((m) => m.exportMenu('schedule'));
   el.onclick = (e) => {
     const pl = e.target.closest('[data-place]');
     if (pl) return focusOnMap('place', pl.dataset.place, selDay);

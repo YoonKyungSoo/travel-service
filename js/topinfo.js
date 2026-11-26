@@ -1,20 +1,21 @@
-// 상단 정보: 상하이 오늘 날씨 + 실시간 환율 계산기
+// 상단 정보: 여행지(첫 번째 지역) 오늘 날씨 + 실시간 환율 계산기 (현지 통화 → 원)
 // 모바일: 화면 위 바 / PC: 왼쪽 메뉴 안
 import { S, local } from './state.js';
-import { esc, fmtDate, dateRange, shanghaiToday, toast } from './util.js';
+import { esc, fmtDate, dateRange, toast } from './util.js';
 import { openModal, closeModal } from './ui.js';
+import { dest, localToday } from './dest.js';
 
-const WX_URL = 'https://api.open-meteo.com/v1/forecast?latitude=31.2304&longitude=121.4737'
+const wxUrl = (r) => `https://api.open-meteo.com/v1/forecast?latitude=${r.center[0]}&longitude=${r.center[1]}`
   + '&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
-  + '&timezone=Asia%2FShanghai&forecast_days=16';
+  + '&timezone=auto&forecast_days=16';
 const FX_SOURCES = [
-  async () => { // 매일 갱신 (여러 은행 평균)
-    const j = await (await fetch('https://open.er-api.com/v6/latest/CNY')).json();
+  async (code) => { // 매일 갱신 (여러 은행 평균)
+    const j = await (await fetch(`https://open.er-api.com/v6/latest/${code}`)).json();
     if (j.result !== 'success' || !j.rates?.KRW) throw new Error('er-api');
     return { rate: j.rates.KRW, date: new Date(j.time_last_update_unix * 1000).toISOString().slice(0, 10), src: 'ExchangeRate-API' };
   },
-  async () => { // 유럽중앙은행 기준
-    const j = await (await fetch('https://api.frankfurter.app/latest?from=CNY&to=KRW')).json();
+  async (code) => { // 유럽중앙은행 기준
+    const j = await (await fetch(`https://api.frankfurter.app/latest?from=${code}&to=KRW`)).json();
     if (!j.rates?.KRW) throw new Error('frankfurter');
     return { rate: j.rates.KRW, date: j.date, src: 'ECB' };
   },
@@ -35,27 +36,44 @@ function wxKind(code) {
 const readCache = (k) => { try { return JSON.parse(local.get(k) || 'null'); } catch { return null; } };
 const writeCache = (k, v) => local.set(k, JSON.stringify({ ...v, t: Date.now() }));
 
-let wx = readCache('ts:wx');
-let fx = readCache('ts:fx');
+// 지역·통화가 바뀌면 그에 맞는 캐시로 바꿔 끼움
+const wxKey = () => `ts:wx:${dest().primary.id}`;
+const fxKey = () => `ts:fx:${dest().country.currency.code}`;
+let wx = null, wxFor = '';
+let fx = null, fxFor = '';
 let el = null;
+function syncCache() {
+  if (wxFor !== wxKey()) { wxFor = wxKey(); wx = readCache(wxFor); }
+  if (fxFor !== fxKey()) { fxFor = fxKey(); fx = readCache(fxFor); }
+}
 
 async function loadWeather(force) {
+  syncCache();
   if (!force && wx && Date.now() - wx.t < WX_TTL) return;
+  const key = wxFor;
   try {
-    const j = await (await fetch(WX_URL)).json();
-    wx = { current: j.current, daily: j.daily };
-    writeCache('ts:wx', wx);
+    const j = await (await fetch(wxUrl(dest().primary))).json();
+    const v = { current: j.current, daily: j.daily };
+    writeCache(key, v);
+    if (key === wxFor) wx = { ...v, t: Date.now() };
   } catch { /* 이전 값 유지 */ }
 }
 async function loadRate(force) {
+  syncCache();
   if (!force && fx && Date.now() - fx.t < FX_TTL) return;
+  const key = fxFor, code = dest().country.currency.code;
   for (const src of FX_SOURCES) {
-    try { fx = await src(); writeCache('ts:fx', fx); return; } catch { /* 다음 출처 */ }
+    try {
+      const v = await src(code);
+      writeCache(key, v);
+      if (key === fxFor) fx = { ...v, t: Date.now() };
+      return;
+    } catch { /* 다음 출처 */ }
   }
 }
 
-/** 지금 쓸 환율 (실시간 → 마지막 저장값 → 여행 설정값) */
-export const liveRate = () => fx?.rate || S.trip?.fxRate || 195;
+/** 지금 쓸 환율: 현지 통화 1단위 = ?원 (실시간 → 마지막 저장값 → 여행 설정값) */
+export const liveRate = () => fx?.rate || S.trip?.fxRate || 1;
 const fmtRate = (r) => (Math.round(r * 100) / 100).toLocaleString('ko-KR', { maximumFractionDigits: 2 });
 
 function dayWx(date) {
@@ -67,18 +85,20 @@ function dayWx(date) {
 
 function paint() {
   if (!el) return;
-  const today = dayWx(shanghaiToday());
-  const cur = wx?.current;
-  const [ico, label] = wxKind(cur?.weather_code ?? today?.code ?? 3);
+  syncCache();
+  const cur = dest().country.currency;
+  const today = dayWx(localToday());
+  const now = wx?.current;
+  const [ico, label] = wxKind(now?.weather_code ?? today?.code ?? 3);
   el.innerHTML = `
-    <button type="button" class="ti-btn" data-wx title="상하이 날씨">
+    <button type="button" class="ti-btn" data-wx title="${esc(dest().primary.ko)} 날씨">
       <svg class="i wx"><use href="#${ico}"/></svg>
-      ${cur ? `<b>${Math.round(cur.temperature_2m)}°</b>` : '<b>—</b>'}
-      <span class="ti-sub">${today ? `${today.min}° / ${today.max}°${today.rain >= 30 ? ` · 비 ${today.rain}%` : ` · ${label}`}` : '상하이 날씨'}</span>
+      ${now ? `<b>${Math.round(now.temperature_2m)}°</b>` : '<b>—</b>'}
+      <span class="ti-sub">${today ? `${today.min}° / ${today.max}°${today.rain >= 30 ? ` · 비 ${today.rain}%` : ` · ${label}`}` : `${esc(dest().primary.ko)} 날씨`}</span>
     </button>
     <button type="button" class="ti-btn" data-fx title="환율 계산기">
-      <span class="ti-cny">¥1</span>
-      <b>${fmtRate(liveRate())}원</b>
+      <span class="ti-cny">${cur.sym}${cur.unit}</span>
+      <b>${fmtRate(liveRate() * cur.unit)}원</b>
       <svg class="i ti-swap"><use href="#i-swap"/></svg>
     </button>
     <span class="ti-warn" id="tiWarn" hidden></span>`;
@@ -95,7 +115,12 @@ export function paintMode() {
 }
 
 export async function initTopInfo(target) {
-  if (el) return paint();
+  if (el) { // 여행이 바뀌어 지역·통화가 달라졌으면 새로 불러오기
+    const changed = wxFor !== wxKey() || fxFor !== fxKey();
+    paint();
+    if (changed) { await Promise.all([loadWeather(), loadRate()]); paint(); }
+    return;
+  }
   el = target;
   paint();
   el.addEventListener('click', (e) => {
@@ -115,7 +140,7 @@ export async function initTopInfo(target) {
 
 // ───────── 날씨: 여행 날짜별 예보 ─────────
 function openWeather() {
-  const today = shanghaiToday();
+  const today = localToday();
   const days = S.trip ? dateRange(S.trip.startDate, S.trip.endDate) : [];
   const list = [...new Set([today, ...days])];
   const row = (d) => {
@@ -128,9 +153,9 @@ function openWeather() {
       <span class="wx-temp"><b>${w.max}°</b> / ${w.min}°</span>
       <span class="wx-rain ${w.rain >= 50 ? 'hi' : ''}">☂ ${w.rain ?? 0}%</span></li>`;
   };
-  openModal('상하이 날씨', `
+  openModal(`${dest().primary.ko} 날씨`, `
     <ul class="wx-list">${list.map(row).join('')}</ul>
-    <p class="hint">12월 상하이는 보통 3~10℃, 습하고 비가 잦아요. 강수확률 50% 이상이면 우산 챙기기.</p>
+    <p class="hint">강수확률 50% 이상이면 우산 챙기기.</p>
     <p class="hint">예보: Open-Meteo · ${wx?.t ? new Date(wx.t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) + ' 갱신' : '불러오는 중'}</p>`);
   loadWeather(true).then(() => { paint(); });
 }
@@ -139,14 +164,15 @@ function openWeather() {
 function openCalc() {
   const rate = () => liveRate();
   const trip = S.trip?.fxRate;
+  const cur = dest().country.currency;
   openModal('환율 계산기', `
     <div class="fx-calc">
-      <label class="fx-field"><span>¥ 위안</span><input data-cny type="text" inputmode="decimal" placeholder="0" autocomplete="off" /></label>
+      <label class="fx-field"><span>${cur.sym} ${cur.ko}</span><input data-cny type="text" inputmode="decimal" placeholder="0" autocomplete="off" /></label>
       <div class="fx-eq">=</div>
       <label class="fx-field"><span>₩ 원</span><input data-krw type="text" inputmode="numeric" placeholder="0" autocomplete="off" /></label>
-      <div class="chips fx-quick">${[10, 30, 50, 100, 200, 500].map((n) => `<button type="button" class="chip" data-q="${n}">¥${n}</button>`).join('')}</div>
+      <div class="chips fx-quick">${(cur.code === 'JPY' ? [500, 1000, 3000, 5000, 10000] : [10, 30, 50, 100, 200, 500]).map((n) => `<button type="button" class="chip" data-q="${n}">${cur.sym}${n.toLocaleString('ko-KR')}</button>`).join('')}</div>
       <p class="fx-rate" data-rate></p>
-      ${trip ? `<button type="button" class="btn ghost wide" data-apply>지출 계산 환율도 이 값으로 바꾸기 <small>(지금 ${fmtRate(trip)}원)</small></button>` : ''}
+      ${trip ? `<button type="button" class="btn ghost wide" data-apply>지출 계산 환율도 이 값으로 바꾸기 <small>(지금 ${cur.sym}${cur.unit} = ${fmtRate(trip * cur.unit)}원)</small></button>` : ''}
     </div>`, (body) => {
     const cny = body.querySelector('[data-cny]');
     const krw = body.querySelector('[data-krw]');
@@ -155,14 +181,14 @@ function openCalc() {
     const fromKrw = () => { const n = num(krw.value); cny.value = n ? String(Math.round((n / rate()) * 100) / 100) : ''; };
     const showRate = () => {
       body.querySelector('[data-rate]').innerHTML = fx
-        ? `¥1 = <b>${fmtRate(fx.rate)}원</b> · ${esc(fx.date)} 기준 (${esc(fx.src)})`
-        : `¥1 = <b>${fmtRate(rate())}원</b> · 실시간 환율을 못 불러와서 여행 설정값 사용 중`;
+        ? `${cur.sym}${cur.unit} = <b>${fmtRate(fx.rate * cur.unit)}원</b> · ${esc(fx.date)} 기준 (${esc(fx.src)})`
+        : `${cur.sym}${cur.unit} = <b>${fmtRate(rate() * cur.unit)}원</b> · 실시간 환율을 못 불러와서 여행 설정값 사용 중`;
     };
     cny.addEventListener('input', fromCny);
     krw.addEventListener('input', () => { const n = num(krw.value); krw.value = n ? n.toLocaleString('ko-KR') : ''; fromKrw(); });
     body.querySelectorAll('[data-q]').forEach((b) => { b.onclick = () => { cny.value = b.dataset.q; fromCny(); }; });
     body.querySelector('[data-apply]')?.addEventListener('click', async () => {
-      await S.store.updateTrip(S.key, { fxRate: Math.round(rate() * 100) / 100 });
+      await S.store.updateTrip(S.key, { fxRate: Math.round(rate() * 10000) / 10000 });
       toast('지출 환율을 바꿨어요.');
       closeModal();
     });

@@ -1,5 +1,5 @@
-// 자주 쓰는 중국어 (한국어 · 중국어 · 병음). 누르면 크게 보여주기
-export const PHRASE_GROUPS = [
+// 자주 쓰는 현지어 (한국어 · 현지어 · 읽는 법). 누르면 크게 보여주기
+const ZH = [
   { id: 'basic', label: '기본', items: [
     ['안녕하세요', '你好', 'nǐ hǎo'],
     ['감사합니다', '谢谢', 'xièxie'],
@@ -72,3 +72,72 @@ export const PHRASE_GROUPS = [
     ['경찰 110 · 구급차 120', '报警 110 · 急救 120', 'bàojǐng · jíjiù'],
   ] },
 ];
+
+const JA = [
+  { id: 'basic', label: '기본', items: [
+    ['안녕하세요', 'こんにちは', 'konnichiwa'],
+    ['감사합니다', 'ありがとうございます', 'arigatō gozaimasu'],
+    ['실례합니다 / 저기요', 'すみません', 'sumimasen'],
+    ['괜찮아요 (필요 없어요)', '大丈夫です', 'daijōbu desu'],
+    ['이거 주세요', 'これをください', 'kore o kudasai'],
+    ['한국 사람이에요', '韓国人です', 'kankokujin desu'],
+    ['일본어를 못해요', '日本語が話せません', 'nihongo ga hanasemasen'],
+    ['여기 써 주세요 (번역기에)', 'ここに書いてください', 'koko ni kaite kudasai'],
+    ['화장실 어디예요?', 'トイレはどこですか？', 'toire wa doko desu ka?'],
+  ] },
+  { id: 'food', label: '식당', items: [
+    ['두 명이에요', '二人です', 'futari desu'],
+    ['얼마나 기다려요?', 'どのくらい待ちますか？', 'dono kurai machimasu ka?'],
+    ['메뉴판 주세요', 'メニューをください', 'menyū o kudasai'],
+    ['추천 메뉴가 뭐예요?', 'おすすめは何ですか？', 'osusume wa nan desu ka?'],
+    ['한국어 메뉴 있어요?', '韓国語のメニューはありますか？', 'kankokugo no menyū wa arimasu ka?'],
+    ['고수 빼 주세요', 'パクチー抜きでお願いします', 'pakuchī nuki de onegaishimasu'],
+    ['안 맵게 해 주세요', '辛くしないでください', 'karaku shinaide kudasai'],
+    ['생맥주 두 잔', '生ビール二つ', 'nama bīru futatsu'],
+    ['물 좀 주세요', 'お水をください', 'omizu o kudasai'],
+    ['포장해 주세요', '持ち帰りでお願いします', 'mochikaeri de onegaishimasu'],
+    ['계산해 주세요', 'お会計お願いします', 'okaikei onegaishimasu'],
+    ['따로 계산할게요', '別々でお願いします', 'betsubetsu de onegaishimasu'],
+  ] },
+  { id: 'drink', label: '음료', items: [
+    ['얼음 빼 주세요', '氷なしでお願いします', 'kōri nashi de onegaishimasu'],
+    ['따뜻한 걸로', 'ホットで', 'hotto de'],
+    ['차가운 걸로', 'アイスで', 'aisu de'],
+    ['작은 사이즈', 'Sサイズで', 'esu saizu de'],
+  ] },
+  { id: 'shop', label: '쇼핑·결제', items: [
+    ['얼마예요?', 'いくらですか？', 'ikura desu ka?'],
+    ['그냥 둘러볼게요', '見ているだけです', 'mite iru dake desu'],
+    ['카드 돼요?', 'カード使えますか？', 'kādo tsukaemasu ka?'],
+    ['면세 돼요?', '免税できますか？', 'menzei dekimasu ka?'],
+    ['봉투 하나 주세요', '袋をください', 'fukuro o kudasai'],
+    ['입어 봐도 돼요?', '試着してもいいですか？', 'shichaku shite mo ii desu ka?'],
+    ['영수증 주세요', 'レシートをください', 'reshīto o kudasai'],
+  ] },
+  { id: 'move', label: '교통', items: [
+    ['여기로 가 주세요', 'ここまでお願いします', 'koko made onegaishimasu'],
+    ['여기서 세워 주세요', 'ここで止めてください', 'koko de tomete kudasai'],
+    ['역이 어디예요?', '駅はどこですか？', 'eki wa doko desu ka?'],
+    ['이 전철 ○○ 가요?', 'この電車は○○に行きますか？', 'kono densha wa ○○ ni ikimasu ka?'],
+    ['코인로커 어디예요?', 'コインロッカーはどこですか？', 'koin rokkā wa doko desu ka?'],
+    ['카드 충전하고 싶어요', 'チャージしたいです', 'chāji shitai desu'],
+  ] },
+  { id: 'stay', label: '숙소', items: [
+    ['체크인할게요', 'チェックインお願いします', 'chekku in onegaishimasu'],
+    ['체크아웃할게요', 'チェックアウトお願いします', 'chekku auto onegaishimasu'],
+    ['짐 맡길 수 있어요?', '荷物を預かってもらえますか？', 'nimotsu o azukatte moraemasu ka?'],
+    ['와이파이 비밀번호가 뭐예요?', 'Wi-Fiのパスワードは何ですか？', 'waifai no pasuwādo wa nan desu ka?'],
+    ['수건 더 주세요', 'タオルをもう一枚ください', 'taoru o mō ichimai kudasai'],
+  ] },
+  { id: 'help', label: '긴급', items: [
+    ['도와주세요', '助けてください', 'tasukete kudasai'],
+    ['길을 잃었어요', '道に迷いました', 'michi ni mayoimashita'],
+    ['병원에 가야 해요', '病院に行きたいです', 'byōin ni ikitai desu'],
+    ['약국 어디예요?', '薬局はどこですか？', 'yakkyoku wa doko desu ka?'],
+    ['여권을 잃어버렸어요', 'パスポートをなくしました', 'pasupōto o nakushimashita'],
+    ['경찰 110 · 구급차·화재 119', '警察 110 · 救急 119', 'keisatsu · kyūkyū'],
+  ] },
+];
+
+/** 나라별 회화 (중국 zh / 일본 ja) */
+export const PHRASES = { zh: ZH, ja: JA };
