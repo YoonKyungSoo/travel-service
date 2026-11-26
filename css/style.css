@@ -343,8 +343,14 @@ b { font-weight: 700; }
   text-shadow: 0 0 3px var(--map-land), 0 0 3px var(--map-land);
 }
 @media (prefers-color-scheme: dark) { .dlabel { color: #9a9aa3; } }
-.dlabel.small { display: none; }
-.zoomed .dlabel.small { display: block; }
+.dlabel.small { font-size: 9.5px; letter-spacing: -0.04em; } /* 작은 구도 이름은 항상 표시 */
+/* 공항 편집 */
+.sub-act { display: flex; align-items: center; justify-content: space-between; padding-right: 4px; }
+.sub-act .btn { text-transform: none; letter-spacing: 0; }
+.ap-list { margin: 0 0 12px; }
+.ap-row { display: flex; align-items: center; gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.ap-row .row-main b { white-space: normal; }
+.ap-row.off .row-main { opacity: 0.45; text-decoration: line-through; }
 .street .dlabel { display: none !important; }
 .airport { position: absolute; transform: translate(-13px, -13px); display: flex; align-items: center; gap: 5px; white-space: nowrap; }
 .airport i { width: 26px; height: 26px; border-radius: var(--r-xs); background: #0b0b0c; color: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,.3); }

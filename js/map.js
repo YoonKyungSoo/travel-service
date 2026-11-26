@@ -2,12 +2,20 @@
 /* global L */
 import { S, add, update, remove, byId, onChange } from './state.js';
 import { DISTRICT_BY_ADCODE, PLACE_CATS, STAY_STATUS, GEO_META, districtName, districtColor, catSvg } from './data.js';
-import { esc, fmtDate, dateRange, parseLatLng, toast, distanceKm } from './util.js';
+import { esc, fmtDate, dateRange, parseLatLng, toast, distanceKm, newId } from './util.js';
 import { dest, navButtonsHtml, L10N } from './dest.js';
-import { formModal, field, input, textarea, segmented, select, showDriver, empty } from './ui.js';
+import { formModal, field, input, textarea, segmented, select, showDriver, empty, openModal, closeModal } from './ui.js';
 import { dayStops, drawRoute, legsOf, legLinksHtml } from './route.js';
 
-const STREET_ZOOM = 12; // 이 배율 이상이면 거리 지도 자동 표시
+// 이 배율 이상이면 거리 지도 자동 표시. 지역 크기에 맞춰 자동 계산 (상하이 기준: 도시 전체가 보이는 배율 + 3 → 12)
+let streetZoom = 12;
+let geoBounds = []; // 지역(파일)별 경계 범위
+function updateStreetZoom() {
+  const size = map.getSize();
+  if (!geoBounds.length || size.x < 50 || size.y < 50) return;
+  const z = Math.max(...geoBounds.map((b) => Math.floor(map.getBoundsZoom(b)) + 3));
+  streetZoom = Math.min(16, Math.max(12, z));
+}
 
 let map, geo, geoOutline, geoLabels, tileLayer, placeLayer, stayLayer, routeLayer, airportLayer, myLoc;
 let curDest = null, destKey = ''; // 지금 지도가 맞춰진 목적지
@@ -67,7 +75,8 @@ function refreshDistrictStyles() {
 /** 확대 배율에 따라 거리 지도 자동 켜기/끄기 */
 function syncStreet() {
   if (!tileLayer) return;
-  const want = tileForced || !geo || map.getZoom() >= STREET_ZOOM; // 구 경계가 없는 지역은 늘 거리 지도
+  updateStreetZoom();
+  const want = tileForced || !geo || map.getZoom() >= streetZoom; // 구 경계가 없는 지역은 늘 거리 지도
   if (want === streetOn()) return;
   want ? tileLayer.addTo(map).bringToBack() : map.removeLayer(tileLayer);
   map.getContainer().classList.toggle('street', want);
@@ -250,12 +259,13 @@ function renderSheet() {
       <input id="placeSearch" type="search" placeholder="${esc(L10N().searchPh)}" value="${esc(view.q)}" autocomplete="off" enterkeyhint="search" />
     </label>
     ${catChipsHtml()}
-    ${usedDistricts.length > 1 ? `<div class="chips scroll-x dchips">
+    ${usedDistricts.length ? `<div class="chips scroll-x dchips">
       ${usedDistricts.map((d) => `<button type="button" class="chip line ${view.district === d.id ? 'on' : ''}" data-district="${d.id}"><i style="background:${d.color}"></i>${esc(d.ko)} <small>${counts[d.id]}</small></button>`).join('')}
     </div>` : ''}
     <ul class="list" id="placeList">${placeListHtml(places)}</ul>
-    <h3 class="sub">공항</h3>
+    <h3 class="sub sub-act">공항 <button type="button" class="btn sm ghost" data-airports-edit>편집</button></h3>
     <ul class="list">
+      ${(curDest?.airports || []).length ? '' : '<li class="list-sub">공항이 없어요. 편집에서 추가하세요.</li>'}
       ${(curDest?.airports || []).map((a) => `<li><button type="button" class="row" data-airport="${a.id}"><span class="thumb ico">${catSvg('', 'i').replace('#c-etc', '#c-plane')}</span><span class="row-main"><b>${esc(a.name)}</b><small>${esc(a.nameZh)}</small></span><svg class="i row-go"><use href="#i-chev"/></svg></button></li>`).join('')}
     </ul>`;
 
@@ -371,6 +381,7 @@ sheetBody.addEventListener('click', (e) => {
   const d = t.dataset;
   if (d.cat) { view.cat = d.cat !== 'all' && view.cat === d.cat ? 'all' : d.cat; if (d.cat === 'all') view.fav = false; renderSheet(); renderPins(); }
   else if ('fav' in d) { view.fav = !view.fav; renderSheet(); renderPins(); }
+  else if ('airportsEdit' in d) airportsEditor();
   else if (d.district) selectDistrict(d.district, true);
   else if (d.place) openDetail('place', d.place);
   else if (d.stay) openDetail('stay', d.stay);
@@ -818,6 +829,93 @@ function fitAll(animate) {
 }
 
 // ───────── 초기화 ─────────
+/** 지도 위 공항 표시 (직접 추가·삭제한 것 반영) */
+function renderAirports() {
+  if (!airportLayer || !S.trip) return;
+  curDest = dest();
+  airportLayer.clearLayers();
+  for (const a of curDest.airports) {
+    L.marker([a.lat, a.lng], {
+      zIndexOffset: 1000,
+      icon: L.divIcon({ className: 'airport-wrap', html: `<div class="airport"><i><svg class="i"><use href="#c-plane"/></svg></i><span>${esc(a.name)}</span></div>`, iconSize: [0, 0] }),
+    }).bindTooltip(esc(a.nameZh || a.name), { direction: 'bottom' }).addTo(airportLayer);
+  }
+}
+
+/** 공항 편집: 기본 공항 숨기기 · 직접 추가한 공항 삭제 · 새 공항 추가 */
+function airportsEditor() {
+  const t = S.trip;
+  const d = dest();
+  const hidden = new Set(t.airportsHidden || []);
+  const builtIn = d.regions.flatMap((r) => r.airports);
+  const custom = t.airportsCustom || [];
+  openModal('공항 편집', `
+    <ul class="list ap-list">
+      ${builtIn.map((a) => `<li class="ap-row ${hidden.has(a.id) ? 'off' : ''}"><span class="row-main"><b>${esc(a.name)}</b><small>${esc(a.nameLocal)} · 기본</small></span>
+        ${hidden.has(a.id) ? `<button type="button" class="btn sm" data-ap-show="${a.id}">다시 표시</button>` : `<button type="button" class="btn sm ghost" data-ap-hide="${a.id}">삭제</button>`}</li>`).join('')}
+      ${custom.map((a) => `<li class="ap-row"><span class="row-main"><b>${esc(a.name)}</b><small>${esc(a.nameZh || '')} · 직접 추가</small></span>
+        <button type="button" class="btn sm ghost" data-ap-del="${a.id}">삭제</button></li>`).join('')}
+    </ul>
+    <button type="button" class="btn primary wide" data-ap-add><svg class="i"><use href="#i-plus"/></svg>공항 추가</button>
+    <p class="hint">지운 공항은 지도·동선·공항 이동 계획에서 빠져요. 같은 방 사람들에게도 똑같이 보여요.</p>`, (el) => {
+    el.addEventListener('click', async (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const ds = b.dataset;
+      if (ds.apHide) await S.store.updateTrip(S.key, { airportsHidden: [...hidden, ds.apHide] });
+      else if (ds.apShow) await S.store.updateTrip(S.key, { airportsHidden: [...hidden].filter((x) => x !== ds.apShow) });
+      else if (ds.apDel) {
+        if (!confirm('이 공항을 삭제할까요?')) return;
+        await S.store.updateTrip(S.key, { airportsCustom: custom.filter((x) => x.id !== ds.apDel) });
+      } else if ('apAdd' in ds) { closeModal(); setTimeout(airportForm, 200); return; }
+      else return;
+      setTimeout(airportsEditor, 150); // 바뀐 내용으로 다시 열기
+    });
+  });
+}
+
+function airportForm() {
+  formModal({
+    title: '공항 추가',
+    fields: `
+      ${field('공항 이름 *', input('name', '', 'required placeholder="예) 김포공항, 간사이 T2" autocomplete="off"'))}
+      ${field(L10N().nameLocal, input('nameZh', '', 'autocomplete="off"'), '택시 기사님께 보여줄 때 써요.')}
+      ${locationFieldHtml(undefined, undefined, true, '공항 이름(현지어·영어)으로 검색하세요. 예) 関西空港, Kansai Airport')}`,
+    bind: bindLocationField,
+    onSubmit: async (v) => {
+      if (!v.name) { toast('공항 이름을 입력하세요.'); return false; }
+      if (!takeLocation(v, true)) return false;
+      const ap = { id: `C${newId(6)}`, name: v.name, nameZh: v.nameZh || '', lat: v.lat, lng: v.lng };
+      await S.store.updateTrip(S.key, { airportsCustom: [...(S.trip.airportsCustom || []), ap] });
+      toast('공항을 추가했어요.');
+      setTimeout(airportsEditor, 250);
+    },
+  });
+}
+
+/** 구 이름이 겹치면 위아래로 비켜 배치 (큰 구부터 자리 잡음). 이름은 하나도 숨기지 않음 */
+function declutterLabels() {
+  if (!geoLabels || streetOn()) return;
+  const els = [...map.getContainer().querySelectorAll('.dlabel')];
+  els.forEach((el) => { el.style.transform = ''; });
+  els.sort((a, b) => b.dataset.span - a.dataset.span);
+  const placed = [];
+  const hit = (r) => placed.some((p) => !(r.right < p.left || r.left > p.right || r.bottom < p.top || r.top > p.bottom));
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    if (!r.width) continue;
+    // 제자리 → 위·아래 → 좌·우 → 대각선 → 더 멀리 순서로 빈자리 찾기 (못 찾으면 제자리)
+    const h = r.height * 0.85, w = r.width * 0.6;
+    const tries = [[0, 0], [0, -h], [0, h], [-w, 0], [w, 0], [-w, -h], [w, -h], [-w, h], [w, h], [0, -2 * h], [0, 2 * h], [-2 * w, 0], [2 * w, 0], [-w, -2 * h], [w, -2 * h], [-w, 2 * h], [w, 2 * h], [0, -3 * h], [0, 3 * h]];
+    let [dx, dy] = [0, 0];
+    for (const [tx, ty] of tries) {
+      if (!hit({ left: r.left + tx, right: r.right + tx, top: r.top + ty, bottom: r.bottom + ty })) { [dx, dy] = [tx, ty]; break; }
+    }
+    if (dx || dy) el.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    placed.push({ left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy });
+  }
+}
+
 /** 여행 목적지에 맞춰 지도 바꾸기: 배경 지도(고덕/오픈 지도), 범위, 구 경계(상하이), 공항. 같은 목적지면 아무것도 안 함 */
 export async function applyDest() {
   if (!map || !S.trip) return;
@@ -846,6 +944,10 @@ export async function applyDest() {
   const files = await Promise.all(d.regions.filter((r) => r.geo).map((r) => fetch(r.geo).then((res) => res.json()).catch((err) => { console.error(err); return null; })));
   if (files.some((f) => !f)) toast('구 경계 데이터를 일부 불러오지 못했어요.');
   const features = files.filter(Boolean).flatMap((f) => f.features);
+  geoBounds = files.filter(Boolean).map((f) => L.geoJSON(f).getBounds());
+  const spanOf = (f) => { const b = L.geoJSON(f).getBounds(); return Math.max(b.getEast() - b.getWest(), b.getNorth() - b.getSouth()); };
+  const spans = features.map(spanOf);
+  const median = [...spans].sort((x, y) => x - y)[Math.floor(spans.length / 2)] || 0;
   if (features.length) {
     // 구 id: 상하이는 예전 id(huangpu…) 유지, 나머지는 행정 코드
     features.forEach((f, i) => {
@@ -854,12 +956,12 @@ export async function applyDest() {
       const id = legacy?.id || String(p.code ?? p.adcode);
       p._id = id;
       if (!p.centroid) p.centroid = p.center;
-      const [w, s, e, n] = L.geoJSON(f).getBounds().toBBoxString().split(',').map(Number);
       GEO_META.set(id, {
+        span: spans[i],
         ko: legacy?.ko || p.ko || p.name,
         name: p.name,
         color: legacy?.color || PALETTE[i % PALETTE.length],
-        small: legacy ? !!legacy.small : Math.max(e - w, n - s) < 0.07, // 작은 구는 확대했을 때만 이름 표시
+        small: legacy ? !!legacy.small : spans[i] < median * 0.6, // 작은 구는 글씨를 조금 작게 (이름은 항상 표시)
       });
     });
     geoData = { type: 'FeatureCollection', features };
@@ -887,20 +989,14 @@ export async function applyDest() {
       if (!dd || !c) continue;
       L.marker([c[1], c[0]], {
         interactive: false,
-        icon: L.divIcon({ className: 'dlabel-wrap', html: `<span class="dlabel ${dd.small ? 'small' : ''}">${esc(dd.ko)}</span>`, iconSize: [0, 0] }),
+        icon: L.divIcon({ className: 'dlabel-wrap', html: `<span class="dlabel ${dd.small ? 'small' : ''}" data-span="${dd.span || 1}">${esc(dd.ko)}</span>`, iconSize: [0, 0] }),
       }).addTo(geoLabels);
     }
   }
   map.getContainer().classList.toggle('no-geo', !geo);
+  setTimeout(declutterLabels, 50);
 
-  // 공항
-  airportLayer.clearLayers();
-  for (const a of d.airports) {
-    L.marker([a.lat, a.lng], {
-      zIndexOffset: 1000,
-      icon: L.divIcon({ className: 'airport-wrap', html: `<div class="airport"><i><svg class="i"><use href="#c-plane"/></svg></i><span>${esc(a.name)}</span></div>`, iconSize: [0, 0] }),
-    }).bindTooltip(esc(a.nameZh), { direction: 'bottom' }).addTo(airportLayer);
-  }
+  renderAirports();
 
   view.district = 'all';
   view.detail = null;
@@ -940,8 +1036,10 @@ export async function initMap() {
     el.classList.toggle('z15', z >= 15);
     syncStreet();
     renderPins();
+    declutterLabels();
   };
   map.on('zoomend', onZoom);
+  map.on('resize', () => { syncStreet(); declutterLabels(); });
   onZoom();
 
   // 꾹 누르기(모바일) / 우클릭(PC) → 그 위치로 장소 추가
@@ -993,7 +1091,7 @@ export async function initMap() {
     }
   };
   onChange((what) => {
-    if (what === 'trip' || what === 'all') applyDest(); // 목적지가 바뀌었을 때만 실제로 다시 그림
+    if (what === 'trip' || what === 'all') { applyDest(); renderAirports(); } // 지도는 목적지가 바뀌었을 때만 다시 그림, 공항은 매번
     if (what === 'places' || what === 'stays') fixDistricts(what);
     if (['places', 'stays', 'schedule', 'transports', 'all', 'trip'].includes(what)) {
       if (what === 'trip' || what === 'all') renderDayBar();

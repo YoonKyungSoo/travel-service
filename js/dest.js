@@ -119,10 +119,15 @@ export function dest(trip = S.trip) {
   if (!regions.length) regions.push(regionsOf(country.id)[0]);
   const toMap = (lat, lng) => (country.gcj ? wgs2gcj(lat, lng) : [lat, lng]);
   const bbox = regions.reduce((b, r) => [Math.min(b[0], r.bbox[0]), Math.min(b[1], r.bbox[1]), Math.max(b[2], r.bbox[2]), Math.max(b[3], r.bbox[3])], [90, 180, -90, -180]);
-  const airports = regions.flatMap((r) => r.airports).map((a) => {
-    const [lat, lng] = toMap(a.wgs[0], a.wgs[1]);
-    return { id: a.id, name: a.name, nameZh: a.nameLocal, lat, lng };
-  });
+  // 공항 = 지역 기본 공항 중 숨기지 않은 것 + 여행에서 직접 추가한 공항 (trip.airportsHidden / trip.airportsCustom)
+  const hidden = new Set(trip?.airportsHidden || []);
+  const airports = [
+    ...regions.flatMap((r) => r.airports).filter((a) => !hidden.has(a.id)).map((a) => {
+      const [lat, lng] = toMap(a.wgs[0], a.wgs[1]);
+      return { id: a.id, name: a.name, nameZh: a.nameLocal, lat, lng };
+    }),
+    ...(trip?.airportsCustom || []).filter((a) => typeof a.lat === 'number').map((a) => ({ ...a, custom: true })), // 이미 지도 좌표
+  ];
   return {
     country, regions, primary: regions[0], airports,
     bbox, // WGS
