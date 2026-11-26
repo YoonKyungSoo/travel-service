@@ -352,7 +352,9 @@ function openDetail(type, id) {
   }
 }
 
-function selectDistrict(id) {
+/** toggle: 이미 선택된 구를 다시 누르면 해제(전체)하고 시내로 돌아가기 */
+function selectDistrict(id, toggle = false) {
+  if (toggle && id !== 'all' && view.district === id) { id = 'all'; setTimeout(() => fitCore(true), 0); }
   view.district = id;
   view.detail = null;
   refreshDistrictStyles();
@@ -370,9 +372,9 @@ sheetBody.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t || t.tagName === 'A' && !t.dataset.dayAll) return;
   const d = t.dataset;
-  if (d.cat) { view.cat = d.cat; if (d.cat === 'all') view.fav = false; renderSheet(); renderPins(); }
+  if (d.cat) { view.cat = d.cat !== 'all' && view.cat === d.cat ? 'all' : d.cat; if (d.cat === 'all') view.fav = false; renderSheet(); renderPins(); }
   else if ('fav' in d) { view.fav = !view.fav; renderSheet(); renderPins(); }
-  else if (d.district) selectDistrict(d.district);
+  else if (d.district) selectDistrict(d.district, true);
   else if (d.place) openDetail('place', d.place);
   else if (d.stay) openDetail('stay', d.stay);
   else if (d.airport) {
@@ -808,7 +810,7 @@ export async function initMap() {
         if (pickResolve || streetOn()) return; // 거리 지도에서는 구 클릭 무시
         L.DomEvent.stopPropagation(e);
         const d = DISTRICT_BY_ADCODE[f.properties.adcode];
-        if (d) selectDistrict(d.id);
+        if (d) selectDistrict(d.id, true);
       });
     },
   }).addTo(map);

@@ -95,7 +95,7 @@ export function renderExpense(el) {
   el.onclick = (e) => {
     const t = e.target.closest('button');
     if (!t) return;
-    if (t.dataset.cat) { catFilter = t.dataset.cat; renderExpense(el); }
+    if (t.dataset.cat) { catFilter = t.dataset.cat !== 'all' && catFilter === t.dataset.cat ? 'all' : t.dataset.cat; renderExpense(el); }
     else if (t.dataset.exp) expenseForm(byId('expenses', t.dataset.exp));
   };
 }
