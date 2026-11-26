@@ -1,6 +1,6 @@
 // 숙소(후보 비교 → 확정) · 교통편
 import { S, add, update, remove, byId } from './state.js';
-import { PVG, STAY_STATUS, TRANSPORT_TYPES, districtName } from './data.js';
+import { PVG, airportFor, STAY_STATUS, TRANSPORT_TYPES, districtName } from './data.js';
 import { esc, fmtDate, dateRange, distanceKm, estimateDriveMin, minusMinutes, won, yuan, toKRW, byTime, toast } from './util.js';
 import { formModal, field, input, textarea, select, segmented, showDriver, empty } from './ui.js';
 import { locationFieldHtml, bindLocationField, takeLocation, districtOptions, focusOnMap } from './map.js';
@@ -11,6 +11,11 @@ let seg = 'stay'; // 'stay' | 'transport'
 function returnFlight() {
   return [...S.data.transports].filter((t) => t.type === 'flight').sort(byTime).at(-1);
 }
+function outboundFlight() {
+  return [...S.data.transports].filter((t) => t.type === 'flight').sort(byTime)[0];
+}
+const outAirport = () => airportFor(outboundFlight()?.to);
+const retAirport = () => airportFor(returnFlight()?.from);
 
 export function renderStay(el) {
   el.innerHTML = `
@@ -52,9 +57,9 @@ function stayList() {
     <div class="cards">${list.map(stayCard).join('')}</div>`;
 }
 
-function stayMetrics(s) {
+function stayMetrics(s, ap = PVG) {
   if (typeof s.lat !== 'number') return null;
-  const km = distanceKm(s, PVG);
+  const km = distanceKm(s, ap);
   // 일정에 연결된 장소가 있으면 그 장소들 기준, 없으면 전체 장소 (디즈니 등 먼 곳 때문에 왜곡되지 않게 중앙값)
   const linked = new Set(S.data.schedule.map((x) => x.placeId).filter(Boolean));
   let pts = S.data.places.filter((p) => typeof p.lat === 'number' && !p.approx);
@@ -66,7 +71,8 @@ function stayMetrics(s) {
 
 function stayCard(s) {
   const st = STAY_STATUS[s.status];
-  const m = stayMetrics(s);
+  const ap = retAirport();
+  const m = stayMetrics(s, ap);
   const nights = Math.max(0, dateRange(s.checkIn, s.checkOut).length - 1);
   const krw = s.price ? toKRW(s.price, s.currency, S.trip.fxRate) : 0;
   return `<article class="card stay-card ${s.status}">
@@ -78,7 +84,7 @@ function stayCard(s) {
     ${s.nameZh ? `<p class="zh">${esc(s.nameZh)}</p>` : ''}
     <p class="muted">${esc(districtName(s.district))}${s.nearestMetro ? ` · ${esc(s.nearestMetro)}` : ''} · ${fmtDate(s.checkIn)} – ${fmtDate(s.checkOut)} · ${nights}박</p>
     <dl class="metrics">
-      <div><dt>공항까지</dt><dd>${m ? `${m.min}분<small>${m.km.toFixed(1)}km</small>` : '—<small>위치 미입력</small>'}</dd></div>
+      <div><dt>${esc(ap.name.split(' ')[0])}까지</dt><dd>${m ? `${m.min}분<small>${m.km.toFixed(1)}km · 귀국</small>` : '—<small>위치 미입력</small>'}</dd></div>
       <div><dt>장소 평균</dt><dd>${m?.avg != null ? `${m.avg.toFixed(1)}km<small>${m.n}곳 기준</small>` : '—'}</dd></div>
       <div><dt>1박</dt><dd>${s.price ? `${won(nights ? krw / nights : krw)}<small>총 ${s.currency === 'CNY' ? yuan(s.price) : won(krw)}</small>` : '—<small>가격 미입력</small>'}</dd></div>
     </dl>
@@ -100,7 +106,9 @@ function stayCard(s) {
 
 /** 확정 숙소 기준 공항 이동 계획 */
 function airportPlan(s) {
-  const m = stayMetrics(s);
+  const ra = retAirport(), oa = outAirport();
+  const m = stayMetrics(s, ra);
+  const mi = stayMetrics(s, oa);
   const rf = returnFlight();
   if (!m) return '<p class="notice">숙소 위치를 입력하면 공항 이동 시간을 계산해 드려요.</p>';
   const lines = [];
@@ -109,10 +117,10 @@ function airportPlan(s) {
   if (rf?.depart) {
     const arriveBy = minusMinutes(rf.depart, 120);
     const leave = minusMinutes(arriveBy, m.min + 10);
-    lines.push(`<li><b>${fmtDate(rf.date)} 귀국</b> · ${esc(rf.depart)} 출발 → 공항 <b>${arriveBy}</b> 도착 목표 → 숙소에서 <b>${leave}</b>쯤 출발 (디디 약 ${m.min}분)<br>
+    lines.push(`<li><b>${fmtDate(rf.date)} 귀국</b> · ${esc(rf.depart)} 출발 → 공항 <b>${arriveBy}</b> 도착 목표 → 숙소에서 <b>${leave}</b>쯤 출발 (${esc(ra.name)} · 디디 약 ${m.min}분)<br>
       ${hasFrom ? '<span class="tag tag-gray">교통편 등록됨</span>' : `<button type="button" class="btn sm lime" data-add-airport="from">교통편에 추가</button>`}</li>`);
   }
-  lines.push(`<li><b>${fmtDate(s.checkIn)} 도착</b> · 푸둥 T1 → 숙소 (디디 약 ${m.min}분 / 자기부상열차+지하철도 가능)<br>
+  lines.push(`<li><b>${fmtDate(s.checkIn)} 도착</b> · ${esc(oa.name)} → 숙소 (디디 약 ${mi.min}분${oa.id === 'PVG' ? ' / 자기부상열차+지하철도 가능' : ''})<br>
     ${hasTo ? '<span class="tag tag-gray">교통편 등록됨</span>' : `<button type="button" class="btn sm lime" data-add-airport="to">교통편에 추가</button>`}</li>`);
   return `<details class="plan" ${hasTo && hasFrom ? '' : 'open'}>
     <summary>공항 이동 계획</summary>
@@ -123,14 +131,16 @@ function airportPlan(s) {
 
 function addAirportTransport(dir) {
   const s = S.data.stays.find((x) => x.status === 'confirmed');
-  const m = stayMetrics(s);
+  const ra = retAirport(), oa = outAirport();
+  const m = stayMetrics(s, ra);
+  const mi = stayMetrics(s, oa);
   const rf = returnFlight();
-  const outbound = [...S.data.transports].filter((t) => t.type === 'flight').sort(byTime)[0];
+  const outbound = outboundFlight();
   if (dir === 'from' && rf) {
     const leave = minusMinutes(minusMinutes(rf.depart, 120), m.min + 10);
-    add('transports', { type: 'didi', date: rf.date, depart: leave, arrive: minusMinutes(rf.depart, 120), from: s.name, to: '푸둥 공항 T1', memo: '귀국편 2시간 전 도착 목표' });
+    add('transports', { type: 'didi', date: rf.date, depart: leave, arrive: minusMinutes(rf.depart, 120), from: s.name, to: ra.name, memo: '귀국편 2시간 전 도착 목표' });
   } else {
-    add('transports', { type: 'didi', date: s.checkIn, depart: outbound?.arrive ? minusMinutes(outbound.arrive, -60) : undefined, from: '푸둥 공항 T1', to: s.name, memo: '입국심사·수하물 약 1시간 후' });
+    add('transports', { type: 'didi', date: s.checkIn, depart: outbound?.arrive ? minusMinutes(outbound.arrive, -60) : undefined, from: oa.name, to: s.name, memo: `입국심사·수하물 약 1시간 후 · 디디 약 ${mi.min}분` });
   }
   toast('교통편에 추가했어요.');
 }

@@ -1,7 +1,7 @@
 // 날짜별 동선: 일정(장소 연결) → 번호 핀 + 휘어진 화살표 선 + 구간 거리/시간
 /* global L */
 import { S, byId } from './state.js';
-import { PVG } from './data.js';
+import { airportFor } from './data.js';
 import { esc, legInfo, byTime, amapNav, googleDir } from './util.js';
 
 const flights = () => S.data.transports.filter((t) => t.type === 'flight').sort(byTime);
@@ -14,7 +14,7 @@ export function dayStops(date) {
   const stays = confirmedStays();
   const sleptBefore = stays.find((s) => s.checkIn < date && date <= s.checkOut); // 전날 밤 숙소
   const sleepTonight = stays.find((s) => s.checkIn <= date && date < s.checkOut); // 오늘 밤 숙소
-  const airport = { kind: 'airport', lat: PVG.lat, lng: PVG.lng, name: PVG.name, nameZh: PVG.nameZh };
+  const airport = (a) => ({ kind: 'airport', id: a.id, lat: a.lat, lng: a.lng, name: a.name, nameZh: a.nameZh });
   const stayStop = (s) => ({ kind: 'stay', ref: s, lat: s.lat, lng: s.lng, name: s.name, nameZh: s.nameZh, id: s.id });
 
   const places = S.data.schedule
@@ -25,10 +25,10 @@ export function dayStops(date) {
     .map(({ s, p }, i) => ({ kind: 'place', n: i + 1, ref: p, sch: s, id: p.id, lat: p.lat, lng: p.lng, name: p.name, nameZh: p.nameZh, time: s.time, title: s.title }));
 
   const stops = [];
-  if (out && out.date === date) stops.push({ ...airport, time: out.arrive, title: '도착' });
+  if (out && out.date === date) stops.push({ ...airport(airportFor(out.to)), time: out.arrive, title: '도착' });
   else if (sleptBefore) stops.push({ ...stayStop(sleptBefore), title: '숙소 출발' });
   stops.push(...places);
-  if (ret && ret.date === date && ret !== out) stops.push({ ...airport, time: ret.depart, title: '출국' });
+  if (ret && ret.date === date && ret !== out) stops.push({ ...airport(airportFor(ret.from)), time: ret.depart, title: '출국' });
   else if (sleepTonight) stops.push({ ...stayStop(sleepTonight), title: '숙소 복귀' });
   return { stops, places };
 }

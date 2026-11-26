@@ -1,5 +1,5 @@
 // 전역 상태: 현재 여행 키, 여행 정보, 내 이름, 각 컬렉션 데이터
-export const COLLECTIONS = ['places', 'stays', 'transports', 'schedule', 'checklist', 'expenses'];
+export const COLLECTIONS = ['places', 'stays', 'transports', 'schedule', 'checklist', 'expenses', 'links'];
 
 export const S = {
   store: null, // store.js

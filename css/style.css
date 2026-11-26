@@ -125,6 +125,7 @@ b { font-weight: 700; }
 .tag { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: var(--r-xs); font-size: 11px; font-weight: 700; letter-spacing: 0; vertical-align: 1px; }
 .tag-red { background: var(--lime); color: var(--lime-ink); }
 .tag-gray { background: var(--surface-2); color: var(--text-2); }
+.wish-star { width: 13px; height: 13px; margin-right: 4px; vertical-align: -1px; fill: var(--lime); stroke: var(--text); stroke-width: 1.4; }
 .tag-muted { background: var(--surface-2); color: var(--muted); text-decoration: line-through; }
 .cat-tag { font: 700 9.5px/1 var(--font-en); letter-spacing: 0.12em; font-style: normal; color: var(--text); border: 1px solid var(--line); padding: 3px 5px 2px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
 
@@ -546,6 +547,7 @@ body.picking #map { cursor: crosshair; }
 .quick-add { display: grid; grid-template-columns: 108px 1fr 48px; gap: 6px; }
 .quick-add .btn { min-height: 48px; padding: 0; }
 .quick-add .btn .i { width: 20px; height: 20px; }
+#quickLink { grid-template-columns: 1fr 48px; margin-bottom: 14px; }
 .checks li { display: flex; align-items: center; }
 .check-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 11px 6px 11px 12px; min-height: 52px; border: 0; background: transparent; text-align: left; }
 .box {
@@ -705,3 +707,35 @@ body.picking #map { cursor: crosshair; }
 .loc-sum { display: flex; align-items: center; justify-content: space-between; margin: 0; font-weight: 700; font-size: 14px; }
 .loc-more summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-2); padding: 4px 0; }
 .loc-more input { margin-top: 8px; }
+
+/* 즐겨찾기 */
+.chip.fav .i { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+.chip.fav.on .i { fill: currentColor; }
+.icon-btn.on .i use[href="#i-star"] { fill: currentColor; }
+.fav-check { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; font-weight: 600; }
+.fav-check input { width: 18px; height: 18px; accent-color: var(--lime); margin: 0; }
+.fav-check .i { width: 16px; height: 16px; }
+.fav-check:has(input:checked) .i { fill: var(--lime); }
+.fav-check small { margin-left: auto; color: var(--muted); font-weight: 400; }
+
+/* 참고 사이트 탭 */
+.link-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.link-card { display: flex; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.link-main { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: flex-start; padding: 14px 4px 14px 14px; color: inherit; text-decoration: none; }
+.link-main:active { background: var(--surface-2); }
+.link-ico { flex: none; width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--surface-2); display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); }
+.link-ico .i { width: 18px; height: 18px; }
+.link-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.link-text b { font-size: 15px; font-weight: 700; line-height: 1.35; word-break: keep-all; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.link-memo { color: var(--text-2); font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.link-host { color: var(--muted); font: 600 11.5px var(--font-en), var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link-card .icon-btn { align-self: center; margin: 0 10px 0 4px; flex: none; }
+@media (hover: hover) { .link-main:hover b { text-decoration: underline; text-underline-offset: 3px; } }
+
+/* 칩 아이콘 · 마우스 환경에선 칩을 줄바꿈 (가로 스크롤을 마우스로 못 밀기 때문) */
+.chip .i { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .chips.scroll-x { flex-wrap: wrap; overflow: visible; margin-left: 0; margin-right: 0; padding: 0; row-gap: 6px; }
+}
+/* 하단 탭 6개: 좁은 폰에서도 글자가 안 잘리게 */
+@media (max-width: 380px) { .tabs a { font-size: 10px; letter-spacing: -0.02em; } .tabs a .i { width: 20px; height: 20px; } }

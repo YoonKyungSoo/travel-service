@@ -16,7 +16,7 @@ let tileForced = false;
 const featureLayers = new Map(); // adcode -> layer
 
 // 화면 상태
-const view = { district: 'all', cat: 'all', q: '', detail: null, day: 'all' }; // detail: {type:'place'|'stay', id}
+const view = { district: 'all', cat: 'all', fav: false, q: '', detail: null, day: 'all' }; // detail: {type:'place'|'stay', id}
 const sheet = document.getElementById('sheet');
 const sheetBody = document.getElementById('sheetBody');
 const dayBar = document.getElementById('dayBar');
@@ -191,9 +191,10 @@ function filteredPlaces() {
   let places = S.data.places;
   if (view.district !== 'all') places = places.filter((p) => p.district === view.district);
   if (view.cat !== 'all') places = places.filter((p) => p.category === view.cat);
+  if (view.fav) places = places.filter((p) => p.wish);
   const q = view.q.trim().toLowerCase();
-  if (q) places = places.filter((p) => [p.name, p.nameZh, p.memo, p.howto, ...(p.tags || []), districtName(p.district)].some((t) => (t || '').toLowerCase().includes(q)));
-  return [...places].sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || a.name.localeCompare(b.name));
+  if (q) places = places.filter((p) => [p.name, p.nameZh, p.memo, p.howto, ...(p.tags || []), p.wish ? '즐겨찾기 희망 ★' : '', districtName(p.district)].some((t) => (t || '').toLowerCase().includes(q)));
+  return [...places].sort((a, b) => (b.wish ? 1 : 0) - (a.wish ? 1 : 0) || (a.date || '9').localeCompare(b.date || '9') || a.name.localeCompare(b.name));
 }
 
 function thumb(p) {
@@ -207,7 +208,7 @@ function placeRow(p) {
   const where = hasLL(p) ? districtName(p.district) : '어디서나 · 체인/배달';
   return `<li><button type="button" class="row ${p.visited ? 'done' : ''}" data-place="${p.id}">
     ${thumb(p)}
-    <span class="row-main"><b>${esc(p.name)}</b><small><em class="cat-tag">${cat.en}</em>${esc(where)}${p.date ? ' · ' + fmtDate(p.date) : ''}${p.visited ? ' · 다녀옴' : ''}</small></span>
+    <span class="row-main"><b>${p.wish ? '<svg class="i wish-star"><use href="#i-star"/></svg>' : ''}${esc(p.name)}</b><small><em class="cat-tag">${cat.en}</em>${esc(where)}${p.date ? ' · ' + fmtDate(p.date) : ''}${p.visited ? ' · 다녀옴' : ''}</small></span>
     <svg class="i row-go"><use href="#i-chev"/></svg>
   </button></li>`;
 }
@@ -219,6 +220,14 @@ function placeListHtml(places) {
     return `<li>${empty('', msg)}</li>`;
   }
   return pinned.map(placeRow).join('') + (free.length ? `<li class="list-sub">어디서나 · 체인/배달 <small>${free.length}</small></li>${free.map(placeRow).join('')}` : '');
+}
+
+function catChipsHtml() {
+  return `<div class="chips scroll-x">
+      <button type="button" class="chip fav ${view.fav ? 'on' : ''}" data-fav><svg class="i"><use href="#i-star"/></svg>즐겨찾기 <small>${S.data.places.filter((p) => p.wish).length}</small></button>
+      <button type="button" class="chip ${view.cat === 'all' && !view.fav ? 'on' : ''}" data-cat="all">전체</button>
+      ${Object.entries(PLACE_CATS).filter(([k]) => k !== 'etc').map(([k, c]) => `<button type="button" class="chip ${view.cat === k ? 'on' : ''}" data-cat="${k}">${c.label}</button>`).join('')}
+    </div>`;
 }
 
 function renderSheet() {
@@ -238,10 +247,7 @@ function renderSheet() {
       <svg class="i"><use href="#i-search"/></svg>
       <input id="placeSearch" type="search" placeholder="장소 · 중국어 · 태그 검색" value="${esc(view.q)}" autocomplete="off" enterkeyhint="search" />
     </label>
-    <div class="chips scroll-x">
-      <button type="button" class="chip ${view.cat === 'all' ? 'on' : ''}" data-cat="all">전체</button>
-      ${Object.entries(PLACE_CATS).filter(([k]) => k !== 'etc').map(([k, c]) => `<button type="button" class="chip ${view.cat === k ? 'on' : ''}" data-cat="${k}">${c.label}</button>`).join('')}
-    </div>
+    ${catChipsHtml()}
     ${usedDistricts.length > 1 ? `<div class="chips scroll-x dchips">
       ${usedDistricts.map((d) => `<button type="button" class="chip line ${view.district === d.id ? 'on' : ''}" data-district="${d.id}"><i style="background:${d.color}"></i>${esc(d.ko)} <small>${counts[d.id]}</small></button>`).join('')}
     </div>` : ''}
@@ -269,7 +275,7 @@ function renderDaySheet() {
   const total = legs.reduce((s, l) => s + l.km, 0);
   const stopRow = (st) => {
     const mark = st.kind === 'place' ? `<b>${st.n}</b>` : `<svg class="i"><use href="#${st.kind === 'stay' ? 'c-bed' : 'c-plane'}"/></svg>`;
-    const data = st.kind === 'place' ? `data-place="${st.id}"` : st.kind === 'stay' ? `data-stay="${st.id}"` : 'data-airport="PVG"';
+    const data = st.kind === 'place' ? `data-place="${st.id}"` : st.kind === 'stay' ? `data-stay="${st.id}"` : `data-airport="${st.id}"`;
     return `<li class="it-stop k-${st.kind}"><button type="button" ${data}>
       <span class="it-mark">${mark}</span>
       <span class="it-time">${esc(st.time || '')}</span>
@@ -306,13 +312,14 @@ function renderDetail() {
     <div class="sheet-head">
       <button type="button" class="icon-btn" data-back aria-label="뒤로"><svg class="i"><use href="#i-back"/></svg></button>
       <div class="head-acts">
+        ${isPlace ? `<button type="button" class="icon-btn ${item.wish ? 'on' : ''}" data-wish title="즐겨찾기"><svg class="i"><use href="#i-star"/></svg></button>` : ''}
         ${isPlace ? `<button type="button" class="icon-btn ${item.visited ? 'on' : ''}" data-visited title="다녀옴"><svg class="i"><use href="#i-ok"/></svg></button>` : ''}
         <button type="button" class="icon-btn" data-edit aria-label="수정"><svg class="i"><use href="#i-edit"/></svg></button>
       </div>
     </div>
     <div class="detail">
       ${item.photo ? `<figure class="photo"><img src="${esc(item.photo)}" alt="" /></figure>` : ''}
-      <p class="meta">${meta}${item.approx ? ' <span class="tag tag-gray">대표 위치</span>' : ''}${item.visited ? ' <span class="tag tag-red">다녀옴</span>' : ''}</p>
+      <p class="meta">${meta}${item.wish ? ' <span class="tag tag-red">★ 즐겨찾기</span>' : ''}${item.approx ? ' <span class="tag tag-gray">대표 위치</span>' : ''}${item.visited ? ' <span class="tag tag-red">다녀옴</span>' : ''}</p>
       <h2>${esc(item.name)}</h2>
       ${item.nameZh ? `<p class="zh">${esc(item.nameZh)}</p>` : ''}
       ${item.tags?.length ? `<p class="tags">${item.tags.map((t) => `<span>${esc(t)}</span>`).join('')}</p>` : ''}
@@ -362,7 +369,8 @@ sheetBody.addEventListener('click', (e) => {
   const t = e.target.closest('button, a');
   if (!t || t.tagName === 'A' && !t.dataset.dayAll) return;
   const d = t.dataset;
-  if (d.cat) { view.cat = d.cat; renderSheet(); renderPins(); }
+  if (d.cat) { view.cat = d.cat; if (d.cat === 'all') view.fav = false; renderSheet(); renderPins(); }
+  else if ('fav' in d) { view.fav = !view.fav; renderSheet(); renderPins(); }
   else if (d.district) selectDistrict(d.district);
   else if (d.place) openDetail('place', d.place);
   else if (d.stay) openDetail('stay', d.stay);
@@ -379,6 +387,9 @@ sheetBody.addEventListener('click', (e) => {
     const { type, id } = view.detail;
     const it = byId(type === 'place' ? 'places' : 'stays', id);
     showDriver(it.nameZh || it.name, it.addressZh);
+  } else if ('wish' in d) {
+    const p = byId('places', view.detail.id);
+    update('places', p.id, { wish: !p.wish });
   } else if ('visited' in d) {
     const p = byId('places', view.detail.id);
     update('places', p.id, { visited: !p.visited });
@@ -685,6 +696,7 @@ export function placeForm(p = null, preset = null) {
     canDelete: !!p,
     fields: `
       ${field('이름 *', input('name', p?.name, 'required placeholder="예) 와이탄 야경" autocomplete="off"'))}
+      <label class="fav-check"><input type="checkbox" name="wish" ${p?.wish ? 'checked' : ''} /><svg class="i"><use href="#i-star"/></svg>즐겨찾기 <small>목록 맨 위에 보여요</small></label>
       ${field('분류', segmented('category', Object.fromEntries(Object.entries(PLACE_CATS).map(([k, c]) => [k, c.label])), p?.category || 'sight'))}
       ${locationFieldHtml(lat, lng, false, '한글보다 중국어·영어로 검색하면 잘 나와요. 체인점·배달처럼 위치가 정해지지 않았으면 비워두세요.')}
       ${field('구', select('district', districtOptions(), presetDistrict))}
@@ -702,6 +714,7 @@ export function placeForm(p = null, preset = null) {
       v.tags = v._tags ? v._tags.split(',').map((t) => t.trim()).filter(Boolean) : [];
       delete v._tags;
       if (hasLL(v) && p?.approx && (v.lat !== p.lat || v.lng !== p.lng)) v.approx = false; // 직접 위치를 고치면 대표 위치 표시 해제
+      if (p) v.edited = true; // 수정 화면에서 저장한 장소는 추천 데이터 갱신 때 덮어쓰지 않음
       if (p) await update('places', p.id, v);
       else {
         const id = await add('places', { ...v, visited: false });

@@ -21,7 +21,7 @@ service cloud.firestore {
 
       match /{col}/{docId} {
         function allowedCol() {
-          return col in ['places', 'stays', 'transports', 'schedule', 'checklist', 'expenses'];
+          return col in ['places', 'stays', 'transports', 'schedule', 'checklist', 'expenses', 'links'];
         }
         allow read: if signedIn() && allowedCol()
                     && exists(/databases/$(database)/documents/trips/$(tripKey));

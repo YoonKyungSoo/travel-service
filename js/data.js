@@ -26,12 +26,15 @@ export const districtName = (id) => DISTRICT_BY_ID[id]?.ko || '구 미지정';
 
 // 공항 (WGS-84 근사 좌표 → GCJ-02)
 const pvg = wgs2gcj(31.1508, 121.8018);
-const sha = wgs2gcj(31.1943, 121.3268);
+const sha = wgs2gcj(31.1975, 121.3410); // 훙차오 T1 (동쪽 터미널)
 export const AIRPORTS = [
   { id: 'PVG', name: '푸둥 공항 T1', nameZh: '浦东国际机场 1号航站楼', lat: pvg[0], lng: pvg[1] },
-  { id: 'SHA', name: '훙차오 공항', nameZh: '虹桥国际机场', lat: sha[0], lng: sha[1] },
+  { id: 'SHA', name: '훙차오 공항 T1', nameZh: '虹桥国际机场 1号航站楼', lat: sha[0], lng: sha[1] },
 ];
 export const PVG = AIRPORTS[0];
+export const SHA = AIRPORTS[1];
+/** 교통편 출발지/도착지 글자로 공항 고르기 (홍차오·훙차오·虹桥·SHA → 훙차오, 그 외 푸둥) */
+export const airportFor = (text) => (/홍차오|훙차오|虹桥|SHA/i.test(text || '') ? SHA : PVG);
 
 // svg: index.html 아이콘 id, en: 작은 영문 라벨
 export const PLACE_CATS = {
@@ -77,14 +80,14 @@ export const CHECK_GROUPS = ['서류', '돈·결제', '전자기기', '앱 설�
 // 새 여행을 만들 때 기본으로 들어가는 값
 export const TRIP_DEFAULT = {
   name: '상하이 여행',
-  startDate: '2026-12-10',
+  startDate: '2026-12-09',
   endDate: '2026-12-13',
   fxRate: 195,
 };
 
 export const SEED = {
   transports: [
-    { type: 'flight', date: '2026-12-10', depart: '16:10', arrive: '17:20', from: '인천 T1', to: '상하이 푸둥 T1', ref: '', memo: '가는 편 · 1시간 10분' },
+    { type: 'flight', date: '2026-12-09', depart: '20:50', arrive: '22:10', from: '인천 T1', to: '상하이 훙차오 T1', ref: '중국동방항공', memo: '가는 편 · 약 2시간 20분 (현지 시각 도착)' },
     { type: 'flight', date: '2026-12-13', depart: '08:40', arrive: '11:55', from: '상하이 푸둥 T1', to: '인천 T1', ref: '', memo: '오는 편 · 2시간 15분 (시차 1시간 포함, 한국 시각 도착)' },
   ],
   checklist: [

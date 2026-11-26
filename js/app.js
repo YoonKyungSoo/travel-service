@@ -5,14 +5,15 @@ import { TRIP_DEFAULT, SEED } from './data.js';
 import { esc, newId, fmtDate, toast, dday } from './util.js';
 import { openModal, closeModal } from './ui.js';
 import { initMap, showMap, detectDistrict } from './map.js';
-import { PACK_VERSION, PACK_PLACES, PACK_STAYS, PACK_SCHEDULE, PACK_CHECKLIST, PACK_CHECK_NOTES } from './pack.js';
+import { PACK_VERSION, PACK_PLACES, PACK_STAYS, PACK_SCHEDULE, PACK_CHECKLIST, PACK_CHECK_NOTES, PACK_WISH, PACK_FLIGHT_FIX, PACK_REFRESH, PACK_LINKS } from './pack.js';
 import { renderSchedule } from './schedule.js';
 import { renderStay } from './stay.js';
 import { renderChecklist } from './checklist.js';
+import { renderLinks } from './links.js';
 import { renderExpense } from './expense.js';
 
-const PAGES = { schedule: renderSchedule, stay: renderStay, checklist: renderChecklist, expense: renderExpense };
-const TABS = ['map', 'schedule', 'stay', 'checklist', 'expense'];
+const PAGES = { schedule: renderSchedule, stay: renderStay, checklist: renderChecklist, expense: renderExpense, links: renderLinks };
+const TABS = ['map', 'schedule', 'stay', 'checklist', 'expense', 'links'];
 const LAST_KEY = 'ts:lastKey';
 
 const $ = (id) => document.getElementById(id);
@@ -130,7 +131,37 @@ async function applyPack(key) {
     const c = S.data.checklist.find((x) => x.group === '앱 설치' && (x.text || '').includes(word) && !x.note);
     if (c) S.store.update(key, 'checklist', c.id, { note });
   }
-  await S.store.updateTrip(key, { pack: PACK_VERSION });
+  // 지점 주소가 정해진 추천 장소: 이름·주소·위치·메모 갱신 (★는 건드리지 않음)
+  for (const id of PACK_REFRESH) {
+    const cur = S.data.places.find((x) => x.id === id);
+    const nw = PACK_PLACES.find((x) => x.id === id);
+    if (!cur || cur.src !== 'pack' || cur.edited || !nw) continue; // 직접 고친 적 있으면 그대로 둠
+    const { id: _i, wish: _w, visited: _v, src: _s, ...fields } = nw; // eslint-disable-line no-unused-vars
+    fields.approx = !!nw.approx;
+    if (typeof nw.lat === 'number') fields.district = detectDistrict(nw.lat, nw.lng);
+    S.store.update(key, 'places', id, fields);
+  }
+  // ★ 즐겨찾기: 이미 들어간 추천 장소에도
+  for (const id of PACK_WISH) {
+    const p = S.data.places.find((x) => x.id === id);
+    if (p && !p.wish) S.store.update(key, 'places', id, { wish: true });
+  }
+  // 항공 일정 변경: 예전 가는 편이 그대로면 고치고, 여행 시작일·추천 숙소 체크인도 하루 앞당김
+  const fx = PACK_FLIGHT_FIX;
+  const oldFlight = S.data.transports.find(fx.match);
+  if (oldFlight) S.store.update(key, 'transports', oldFlight.id, fx.patch);
+  const tripPatch = { pack: PACK_VERSION };
+  // 참고 사이트는 새 컬렉션이라 보안 규칙을 다시 게시해야 저장됨 → 실패하면 다음에 다시 시도
+  const links = PACK_LINKS.filter((l) => !has('links', l.id));
+  if (links.length) {
+    try { await S.store.putMany(key, { links }); } catch (e) { console.error('참고 사이트 넣기 실패 (firestore.rules 다시 게시 필요)', e); tripPatch.pack = 3; }
+  }
+  if (S.trip.startDate === fx.tripFrom) tripPatch.startDate = fx.tripTo;
+  const st = S.data.stays.find((x) => x.id === 'pk_stay_bluemountain');
+  if (st && st.checkIn === fx.tripFrom) S.store.update(key, 'stays', st.id, { checkIn: fx.tripTo });
+  const d1a = S.data.schedule.find((x) => x.id === 'pk_sch_d1a');
+  if (d1a && d1a.memo === '도착 후 숙소에 짐 두고 출발') S.store.update(key, 'schedule', d1a.id, { memo: '' });
+  await S.store.updateTrip(key, tripPatch);
   if (places.length) toast(`추천 장소 ${places.length}곳과 일정을 불러왔어요.`);
 }
 
@@ -176,7 +207,7 @@ function showLanding(msg) {
   landingEl.innerHTML = `
     <div class="landing">
       <div class="hero">
-        <span class="hero-tag">ICN → PVG · DEC 10–13</span>
+        <span class="hero-tag">ICN → SHA · DEC 9–13</span>
         <h1><span class="zh-big">上海</span>상하이 가보자고</h1>
         <p>지도 · 일정 · 숙소 · 준비물 · 지출 — 둘이 한 링크로.</p>
       </div>

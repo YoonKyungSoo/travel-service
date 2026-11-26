@@ -3,11 +3,12 @@
 // 문서 ID가 고정이라 두 사람이 동시에 열어도 같은 문서에 덮어써질 뿐 중복되지 않습니다.
 import { wgs2gcj } from './util.js';
 
-export const PACK_VERSION = 1;
+export const PACK_VERSION = 7;
 
 // 좌표는 WGS-84(OpenStreetMap 기준) → 불러올 때 GCJ-02로 변환
 // approx: 정확한 지점이 아니라 대표 위치 (체인점 등)
 // lat 없음: 지점이 많은 체인·배달 → 핀 없이 목록에만 ("어디서나")
+// wish: 우리가 꼭 먹고/하고 싶은 곳 (목록 맨 위 · ★ 표시)
 const P = (id, o) => ({ id: `pk_${id}`, ...o });
 
 const RAW_PLACES = [
@@ -43,17 +44,24 @@ const RAW_PLACES = [
   P('laozhengxing', { name: '홍샤오러우 · 라오정싱', nameZh: '老正兴菜馆', addressZh: '上海市黄浦区福州路556号', category: 'food', tags: ['현지음식', '고기', '본방요리'], memo: '상하이 본방요리(本帮菜) 노포. 홍샤오러우.', wgs: [31.23513, 121.47564] }),
   P('laolao', { name: '그랜드마더 (상하이 가정식)', nameZh: '上海姥姥家常饭馆', addressZh: '上海市黄浦区福州路70号', category: 'food', tags: ['가정식'], memo: '중국식 가정식 · 동파육, 마파두부.', wgs: [31.2373, 121.4856], approx: true }),
   P('haidilao', { name: '하이디라오 훠궈', nameZh: '海底捞火锅', category: 'food', tags: ['훠궈', '고기', '24시간'], howto: '지점이 많고 24시간 지점도 있음', memo: '하이디라오의 나라에서 훠궈는 무조건! 한국의 반 가격, 한국에 없는 메뉴 많음.', photo: 'haidilao', wgs: [31.23915, 121.47922], approx: true, date: '2026-12-12' }),
-  P('henjiu', { name: '헌지우이치엔 (양꼬치)', nameZh: '很久以前羊肉串', category: 'food', tags: ['양꼬치', '맥주'], memo: '여행 때마다 2번 이상 가는 인생 양꼬치. 부추무침·국수·볶음밥·우유식빵 통집, 맥주는 필수.', photo: 'henjiu', wgs: [31.21767, 121.45508], approx: true }),
-  P('hongkuijia', { name: '홍쿠이지아 (가재·새우)', nameZh: '红盔甲', category: 'food', tags: ['해산물'], memo: '한국인 입맛 저격 맛집. 다 손질해줘서 먹기도 편함.', photo: 'hongkuijia', wgs: [31.17607, 121.48845], approx: true }),
-  P('laila', { name: '라이라이 샤오룽바오', nameZh: '莱莱小笼', category: 'food', tags: ['샤오룽바오'], wgs: [31.23626, 121.47699] }),
+  P('henjiu', { name: '헌지우이치엔 양꼬치 · 제일백화점점', nameZh: '很久以前羊肉串(南京东路第一百货店)', addressZh: '上海市黄浦区南京东路800号 第一百货', category: 'food', tags: ['양꼬치', '맥주'], howto: '1·2·8호선 인민광장역 / 2·10호선 난징둥루역', memo: '여행 때마다 2번 이상 가는 인생 양꼬치. 부추무침·국수·볶음밥·우유식빵 통집, 맥주는 필수.\n지점 중 줄이 제일 길어요. 위챗 미니프로그램으로 줄서기. 톈쯔팡 日月光점, 동방명주 근처 尚悦湾점도 있어요.', photo: 'henjiu', wgs: [31.2348, 121.4737], wish: true }),
+  P('hongkuijia', { name: '홍쿠이지아 마라가재 · 인민광장점', nameZh: '红盔甲(人民广场店)', addressZh: '上海市黄浦区金陵东路500号', category: 'food', tags: ['해산물', '마라가재'], howto: '8·14호선 다스제(大世界)역 근처, 인민광장에서 도보', memo: '대표 메뉴는 마라가재볶음(麻辣小龙虾) — 이거 먹으러 가는 곳! 한국인 입맛 저격, 다 손질해줘서 먹기도 편함.\n지점 중 인기 1위라 웨이팅이 길 수 있어요. 영업 11:00–14:00 · 16:30–02:00 (예전 정보 · 디엔핑에서 확인).', photo: 'hongkuijia', wgs: [31.2306, 121.4779], wish: true }),
+  P('laila', { name: '라이라이 샤오룽바오', nameZh: '莱莱小笼', category: 'food', tags: ['샤오룽바오', '미쉐린'], howto: '난징둥루 근처', memo: '미쉐린 가이드에 소개된 샤오룽바오 맛집. 웨이팅은 있지만 회전이 빨라요.\n블로그 추천: 게살 샤오룽바오(蟹粉小笼)가 특히 맛있음. 돈까스는 무난.', wgs: [31.23626, 121.47699], wish: true }),
   P('dintaifung', { name: '딘타이펑 (신톈디)', nameZh: '鼎泰丰', category: 'food', tags: ['딤섬'], wgs: [31.22101, 121.47083] }),
   P('redlips', { name: '레드립스 (마라반)', nameZh: '味爱自助百汇', category: 'food', tags: ['마라', '배달 추천'], memo: '매장도 좋지만 배달 추천! 야식으로, 만두도 같이 시키기.', photo: 'redlips' }),
   P('niunew', { name: '우뉴 스키야키', nameZh: '牛New寿喜烧', category: 'food', tags: ['훠궈'] }),
   P('zhuguangyu', { name: '주광옥 훠궈', nameZh: '朱光玉火锅馆', category: 'food', tags: ['훠궈'] }),
+  // 우리가 꼭 먹고 싶은 것 (지점이 많아 핀 없이 목록에만 · 디엔핑/고덕에서 가까운 곳 검색)
+  P('jianbing', { name: '지엔빙 (젠빙궈쯔)', nameZh: '煎饼果子', category: 'food', tags: ['길거리 간식', '아침'], howto: '아침 노점·골목 가게에서 흔함', memo: '중국식 크레페. 계란 + 바삭한 튀김과자(薄脆)를 넣어 돌돌 말아줘요. 아침으로 딱.\n난징루 근처 노점이 한국인 사이에서 유명해졌다는 기사도 있어요. 디엔핑·샤오홍슈에서 "煎饼果子 南京路" 검색.', wish: true }),
+  P('diandude', { name: '점도덕 딤섬 · 정대점', nameZh: '点都德·德小馆(正大店)', addressZh: '上海市浦东新区陆家嘴西路168号 正大广场', category: 'food', tags: ['딤섬', '광둥요리'], howto: '2호선 루자쭈이역 · 정대광장 안 (동방명주 근처)', memo: '대표 메뉴 홍미창펀(红米肠) — 겉은 쫄깃, 한쪽은 바삭. 샤오마이, 차슈바오(달달한 돼지고기 찐빵)도 성공.\n12/12 정대광장 점심 일정에 딱 맞아요. 간이 한국인 입맛에 잘 맞는 편.', wgs: [31.23865, 121.49474], date: '2026-12-12', wish: true }),
+  P('xiehuangmian', { name: '게살국수 · 위싱지 와이탄점', nameZh: '裕兴记·蟹黄面馆(外滩店)', addressZh: '上海市黄浦区四川中路410号', category: 'food', tags: ['현지음식', '12월 제철'], howto: '2·10호선 난징둥루역, 난징루 보행가 입구에서 약 50m', memo: '게살·게알을 듬뿍 올려 비벼 먹는 상하이 국수(蟹黄面). 12월 털게 철이라 딱 좋아요. 가격대가 꽤 있는 편.\n근처 다른 곳: 蟹谷面(宁波路202号), 庄氏隆兴 蟹樽面道(南京东路228号 新世界大丸 B2).', wgs: [31.2391, 121.4843], wish: true }),
+  P('beijingduck', { name: '베이징덕 · 예상하이 (신톈디)', nameZh: '夜上海', addressZh: '上海市黄浦区湖滨路168号 无限极荟 3楼', category: 'food', tags: ['오리', '저녁', '미쉐린'], howto: '10·13호선 신톈디역, 도보 약 5분 (쇼핑몰 3층)', memo: '베이징덕 하프 사이즈 주문 가능 → 2명이 먹기 딱. 직원이 테이블 앞에서 잘라주고, 캐비어 올린 한입도 나와요.\n마파두부도 같이 시키면 느끼함을 잡아줘요. 12/11 신톈디 일정이랑 묶기 좋음.\n대안: 大董 (淮海中路999号 iapm 6楼, 미쉐린 1스타).', wgs: [31.2181, 121.4728], wish: true }),
+  P('feidachu', { name: '페이다추 (꽈리고추 돼지고기볶음)', nameZh: '费大厨辣椒炒肉(悦荟广场店)', addressZh: '上海市黄浦区南京东路 悦荟广场', category: 'food', tags: ['가정식', '밥도둑', '블로그 추천'], howto: '2·10호선 난징둥루역 · 난징둥루 보행가 중간 悦荟广场 안', memo: '대표 메뉴는 꽈리고추 돼지고기볶음(辣椒炒肉). 흰쌀밥이랑 잘 어울리고 향신료 걱정 적음. 밥은 작은 밥솥째 나와요.\n거대한 아이스티 필수. 식으면 짜지니까 뜨거울 때 먹기.', wgs: [31.2372, 121.4790], approx: true, wish: true }),
+  P('massage', { name: '마사지 (발·전신)', nameZh: '足疗 · 按摩', category: 'activity', tags: ['마사지', '휴식'], howto: '디엔핑에서 足疗 / 按摩 검색 → 숙소 근처로 예약', memo: '디즈니 다녀온 날 밤에 추천. 디엔핑으로 미리 예약하면 편해요.', wish: true }),
 
   // ───── 카페 · 디저트 ─────
   P('tanghulu', { name: '탕후루 · 예원 길거리 간식', nameZh: '冰糖葫芦', category: 'cafe', tags: ['디저트·간식'], howto: '예원 · 성황묘 상점가', memo: '길거리에서 많이 보이는데, 노점 말고 매장 같은 곳에서 사 먹어야 해요!', photo: 'tanghulu', wgs: [31.2281, 121.4892], approx: true }),
-  P('lillian', { name: '릴리안 베이커리', nameZh: '莉莲蛋挞', category: 'cafe', tags: ['에그타르트'], memo: '에그타르트 1개 약 1,500원. 종류가 4개라 취향대로.', photo: 'lillian', wgs: [31.23466, 121.46977] }),
+  P('lillian', { name: '릴리안 베이커리', nameZh: '莉莲蛋挞', category: 'cafe', tags: ['에그타르트'], memo: '에그타르트 1개 약 1,500원. 종류가 4개라 취향대로.', photo: 'lillian', wgs: [31.23466, 121.46977], wish: true }),
   P('holiland', { name: '홀리랜드', nameZh: '好利来', category: 'cafe', tags: ['케이크', '기념품'], memo: '귀여운 케이크부터 유명 디저트까지. 포장이 꼼꼼해 마지막에 사서 한국에 가져가기도 좋아요.', photo: 'holiland', wgs: [31.23925, 121.49570], approx: true }),
   P('heytea', { name: '헤이티', nameZh: '喜茶', category: 'cafe', tags: ['음료'], memo: '1일 1헤이티 필수! 다육포도, 망고 코코넛, 다육포도 코코넛.', photo: 'heytea', wgs: [31.23740, 121.46945], approx: true }),
   P('amashouzuo', { name: '아마수작', nameZh: '阿嬷手作', category: 'cafe', tags: ['음료'], memo: '요즘 많이 뜨는 음료! 웨이팅 길면 위챗으로 주문. 늦게 도착해도 냉장고에 보관해줘서 녹지 않아요.', photo: 'amashouzuo' }),
@@ -69,6 +77,11 @@ const RAW_PLACES = [
   P('dq', { name: 'DQ (아이스크림)', category: 'cafe', tags: ['아이스크림', '체인'] }),
 ];
 
+// 이미 들어간 장소를 실제 지점 주소로 고치기 (v3)
+export const PACK_REFRESH = ['pk_henjiu', 'pk_hongkuijia', 'pk_diandude', 'pk_xiehuangmian', 'pk_beijingduck', 'pk_jianbing', 'pk_laila'];
+// 이미 들어간 장소에도 ★ 붙이기 (v2)
+export const PACK_WISH = RAW_PLACES.filter((p) => p.wish).map((p) => p.id);
+
 export const PACK_PLACES = RAW_PLACES.map(({ wgs, photo, ...p }) => {
   const out = { ...p, src: 'pack', visited: false };
   if (wgs) [out.lat, out.lng] = wgs2gcj(wgs[0], wgs[1]);
@@ -78,13 +91,14 @@ export const PACK_PLACES = RAW_PLACES.map(({ wgs, photo, ...p }) => {
 
 const bm = wgs2gcj(31.2415, 121.4815);
 export const PACK_STAYS = [
-  { id: 'pk_stay_bluemountain', name: '블루마운틴 유스호스텔 (와이탄)', nameZh: '蓝山国际青年旅舍', status: 'candidate', checkIn: '2026-12-10', checkOut: '2026-12-13', lat: bm[0], lng: bm[1], memo: '가이드 PDF 지도에 표시된 숙소 · 정확한 위치와 가격은 확인 필요', src: 'pack' },
+  { id: 'pk_stay_bluemountain', name: '블루마운틴 유스호스텔 (와이탄)', nameZh: '蓝山国际青年旅舍', status: 'candidate', checkIn: '2026-12-09', checkOut: '2026-12-13', lat: bm[0], lng: bm[1], memo: '가이드 PDF 지도에 표시된 숙소 · 정확한 위치와 가격은 확인 필요', src: 'pack' },
 ];
 
-// 추천 루트 3박 4일 → 실제 항공 시간(12/10 17:20 도착, 12/13 08:40 출발)에 맞춰 조정
+// 추천 루트 → 실제 항공 시간(12/9 22:10 훙차오 도착, 12/13 08:40 푸둥 출발)에 맞춰 조정
 const S = (id, date, time, title, placeId, memo) => ({ id: `pk_sch_${id}`, date, time, title, placeId: `pk_${placeId}`, memo, done: false, src: 'pack' });
 export const PACK_SCHEDULE = [
-  S('d1a', '2026-12-10', '19:30', '난징둥루 구경', 'nanjingroad', '도착 후 숙소에 짐 두고 출발'),
+  { id: 'pk_sch_d0a', date: '2026-12-09', time: '23:10', title: '훙차오 T1 → 숙소 (디디)', placeId: null, memo: '입국심사·짐 찾고 약 1시간 후. 늦은 시간이라 디디/택시가 편해요.', done: false, src: 'pack' },
+  S('d1a', '2026-12-10', '19:30', '난징둥루 구경', 'nanjingroad'),
   S('d1b', '2026-12-10', '20:30', '와이탄 야경', 'bund'),
   S('d1c', '2026-12-10', '21:15', '황푸강 유람선', 'cruise', '마지막 배 시간 확인'),
   S('d2a', '2026-12-11', '10:00', '신톈디 브런치', 'xintiandi'),
@@ -113,4 +127,17 @@ export const PACK_CHECK_NOTES = [
   ['알리페이', '앱 설치 → 회원가입 → 카드 등록 → QR 스캔 결제. 지하철·버스 결제 가능, 관광객용 Tour Pass 기능.'],
   ['디디', '출발지·목적지 입력 → 차량 선택 후 호출. 일반 택시보다 저렴한 경우가 많고 영어 지원, 알리페이 결제 연동.'],
   ['고덕', '중국에서 가장 정확한 지도. 지하철 노선·리뷰 확인. 가고 싶은 곳 별표 저장 후 한국어 메모 가능.'],
+];
+
+// 항공 일정 변경 (v2): 가는 편 12/10 16:10 → 12/9 20:50 인천 → 22:10 훙차오 T1 (중국동방항공)
+export const PACK_FLIGHT_FIX = {
+  match: (t) => t.type === 'flight' && t.date === '2026-12-10' && t.depart === '16:10',
+  patch: { date: '2026-12-09', depart: '20:50', arrive: '22:10', to: '상하이 훙차오 T1', ref: '중국동방항공', memo: '가는 편 · 약 2시간 20분 (현지 시각 도착)' },
+  tripFrom: '2026-12-10',
+  tripTo: '2026-12-09',
+};
+
+// 참고 사이트 (v4)
+export const PACK_LINKS = [
+  { id: 'pk_link_nau2001', title: '양꼬치&베이징덕&점도덕&지엔빙&에그타르트', url: 'https://m.blog.naver.com/nau2001/224279139530', memo: '상하이 맛집 BEST10 (헌지우이치엔·예상하이·점도덕·페이다추·라이라이·하이디라오 …)', order: 1, src: 'pack' },
 ];
